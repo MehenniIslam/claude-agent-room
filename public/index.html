@@ -30,9 +30,19 @@
       <div><dt>Événements</dt><dd id="c-events">0</dd></div>
     </dl>
 
+    <div class="pickers">
+      <label class="picker"><span>Monde</span><select id="world-select" aria-label="Choisir le monde"></select></label>
+      <label class="picker"><span>Fin des agents</span>
+        <select id="ending-select" aria-label="Ce qui arrive aux agents terminés">
+          <option value="pompe">💥 À la pompe</option>
+          <option value="cafe">☕ Pause café</option>
+        </select>
+      </label>
+    </div>
+
     <div class="actions">
-      <button id="btn-demo" class="btn btn--primary" type="button">▶ Lancer Simulation Démo</button>
-      <button id="btn-spawn" class="btn" type="button">✦ Tester un Spawn</button>
+      <button id="btn-demo" class="btn btn--primary" type="button">▶ <span class="long">Lancer Simulation </span>Démo</button>
+      <button id="btn-spawn" class="btn" type="button">✦ <span class="long">Tester un </span>Spawn</button>
       <button id="btn-reset" class="btn btn--ghost" type="button" title="Vider la chambre">⟲</button>
     </div>
   </header>
@@ -82,6 +92,7 @@
   </main>
 
   <script src="demo-scenario.js"></script>
+  <script src="worlds.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

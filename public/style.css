@@ -74,7 +74,7 @@ button { font: inherit; color: inherit; }
 .counters { display: flex; gap: 6px; margin: 0; }
 .counters div {
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-  padding: 4px 12px; min-width: 92px;
+  padding: 4px 10px; min-width: 0;
 }
 .counters dt { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
 .counters dd { margin: 0; font: 600 18px/1.1 var(--pixel); color: var(--cyan); }
@@ -95,6 +95,19 @@ button { font: inherit; color: inherit; }
 }
 .btn--primary:hover { border-color: #fff; }
 .btn--ghost { background: transparent; padding: 8px 11px; }
+
+.pickers { display: flex; gap: 8px; }
+.picker {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px 4px;
+}
+.picker span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.picker select {
+  background: transparent; color: var(--text); border: 0; padding: 0; cursor: pointer;
+  font: 600 13px var(--pixel); outline: none;
+}
+.picker select option { background: var(--panel-2); color: var(--text); }
+.picker:focus-within { border-color: var(--cyan); }
 
 /* ------------------------------ Mise en page ------------------------------ */
 .layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0; }
@@ -202,6 +215,13 @@ button { font: inherit; color: inherit; }
 .history time { color: var(--muted); }
 
 /* ------------------------------ Responsive ------------------------------ */
+@media (max-width: 1720px) {
+  .tagline { display: none; }
+  .topbar { gap: 10px; }
+  .counters dt { font-size: 9px; }
+  .btn { padding: 8px 11px; }
+  .btn .long { display: none; }
+}
 @media (max-width: 1100px) {
   body { overflow: auto; }
   .layout { grid-template-columns: 1fr; }
@@ -212,7 +232,9 @@ button { font: inherit; color: inherit; }
 }
 @media (max-width: 640px) {
   .topbar { gap: 10px; padding: 10px 12px; }
-  .actions { width: 100%; }
+  .actions, .pickers { width: 100%; }
+  .picker { flex: 1; }
   .actions .btn { flex: 1; }
   .inspector { left: 8px; right: 8px; width: auto; }
+  .empty-hint { bottom: 10px; padding: 6px 10px; font-size: 11px; width: calc(100% - 40px); }
 }

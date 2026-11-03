@@ -52,6 +52,15 @@
   ];
   const REPLIES = ['Carrément.', 'Haha, classique.', 'Pareil !', 'Bien joué.', 'Chut, le chat dort.', 'On en reparle au prochain sprint.'];
   const CODE_GLYPHS = ['{ }', '=>', '</>', ';', '( )', 'fn', '++', '[ ]', '&&', '#', '==='];
+  const RETIRE_DELAY = 4500;        // ms au canapé avant d'être retiré (mode pompe)
+  const EXEC_LINES = [
+    'Merci pour tes services, {name}.', '{name}, ton contexte est clos.', 'Fin de mission, {name}. Adieu.',
+    "On n'a plus besoin de toi, {name} !", '{name}, tu as bien travaillé. Désolé.'
+  ];
+  const GHOST_LINES = [
+    'Adieu monde cruel…', "J'avais encore des tokens…", 'Au moins mes tests passent.',
+    'Je reviendrai… en sous-agent.', 'Pensez à commit mon travail !'
+  ];
 
   /* ================================================================
    * Utilitaires
@@ -299,6 +308,12 @@
   let lastSmallTalk = 0;
   let treeDirty = true;
   let hoverId = null;
+  let endingMode = 'pompe';
+  const execQueue = [];
+  let exec = null;
+  let execCooldown = 0;
+  let shakeUntil = 0;
+  const comicTexts = [];
 
   function makeAgent(id, opts = {}) {
     const isMain = id === MAIN_ID;
@@ -462,7 +477,7 @@
    * ================================================================ */
   function ensureAgent(e) {
     let a = agents.get(e.agentId);
-    if (a && a.gone) { agents.delete(e.agentId); a = null; }
+    if (a && (a.gone || a.dying)) { forgetAgent(a); a = null; }
     if (!a) {
       a = makeAgent(e.agentId, { name: e.name || e.agentId, role: normRole(e.role), parentId: e.parentId, timestamp: e.timestamp });
       if (a.id !== MAIN_ID) {
@@ -473,6 +488,13 @@
       }
     }
     return a;
+  }
+  function forgetAgent(a) {
+    releaseSpot(a);
+    agents.delete(a.id);
+    const qi = execQueue.indexOf(a.id);
+    if (qi >= 0) execQueue.splice(qi, 1);
+    if (exec && exec.id === a.id) exec = null;
   }
   function normRole(r) {
     if (!r) return 'Coder';
@@ -501,7 +523,7 @@
 
       case 'SUBAGENT_SPAWN': {
         let a = agents.get(e.agentId);
-        if (a && a.gone) { agents.delete(e.agentId); a = null; }
+        if (a && (a.gone || a.dying)) { forgetAgent(a); a = null; }
         const isNew = !a;
         if (!a) a = makeAgent(e.agentId, { name: e.name, role: normRole(e.role), parentId: e.parentId, prompt: e.prompt || e.message, task: e.message, timestamp: e.timestamp });
         else { a.name = e.name || a.name; a.role = normRole(e.role || a.role); a.prompt = e.prompt || e.message || a.prompt; a.done = false; }
@@ -526,6 +548,7 @@
       case 'TOOL_START': {
         counters.tools++;
         const a = ensureAgent(e);
+        a.retireAt = 0;
         a.tool = e.tool || null;
         a.lastToolAt = now();
         const text = e.message || `Outil ${e.tool || ''}`;
@@ -596,7 +619,8 @@
           { k: 'wait', ms: 1200 },
           { k: 'do', fn: x => {
             x.locked = false;
-            if (loungeFull()) pushQueue(x, [{ k: 'despawn' }]);
+            if (endingMode === 'pompe') pushQueue(x, [goStation(x, 'lounge'), { k: 'do', fn: y => { y.retireAt = now() + RETIRE_DELAY; } }]);
+            else if (loungeFull()) pushQueue(x, [{ k: 'despawn' }]);
             else pushQueue(x, [goStation(x, 'lounge')]);
           } }
         ]);
@@ -639,12 +663,14 @@
     }
     agent.path = []; agent.waitUntil = 0; agent.alpha = 1; agent.locked = false;
     agent.carrying = false;
+    if (endingMode === 'pompe' && agent.done) forgetAgent(agent);
   }
 
   function resetRoom(announce) {
     for (const [id] of agents) if (id !== MAIN_ID) agents.delete(id);
     for (const st of Object.values(STATIONS)) st.occ.fill(null);
     particles.length = 0; glyphs.length = 0; beams.length = 0; folders.length = 0; whiteboard.length = 0;
+    execQueue.length = 0; exec = null; comicTexts.length = 0;
     benchLamps.forEach(l => { l.state = 'idle'; l.until = 0; });
     counters.tools = 0; counters.events = 0;
     deskPile = 0; colorIndex = 1;
@@ -667,8 +693,12 @@
         if (a.alpha <= 0) { agents.delete(a.id); if (selectedId === a.id) closeInspector(); treeDirty = true; }
         continue;
       }
+      if (a.dying) { updateBubbles(a, t, dt); continue; }
       if (a.alpha < 1 && t - a.bornAt > 500) a.alpha = Math.min(1, a.alpha + dt * 2);
       runQueue(a, t);
+      if (endingMode === 'pompe' && a.retireAt && t > a.retireAt && !a.path.length && !a.queue.length && !a.locked) {
+        a.retireAt = 0; a.dying = true; execQueue.push(a.id); treeDirty = true; updateCounters();
+      }
 
       if (a.path.length) {
         const p = a.path[0];
@@ -690,13 +720,15 @@
       // Effets d'activité
       if (!a.path.length && a.activity === 'coding' && a.station === 'code' && Math.random() < dt * 2.2) {
         const d = CODE_DESKS[a.slot] || { x: a.x - 18, y: a.y - 21 };
-        glyphs.push({ x: d.x + 18 + rnd(-6, 6), y: d.y - 9, vy: rnd(-12, -7), life: 0, max: rnd(1, 1.6), text: pick(CODE_GLYPHS), color: a.color });
+        glyphs.push({ x: d.x + 18 + rnd(-6, 6), y: d.y - 9, vy: rnd(-12, -7), life: 0, max: rnd(1, 1.6), text: pick(world.glyphs), color: a.color });
       }
       if (!a.path.length && a.activity === 'planning' && Math.random() < dt * 0.8) addStroke(a);
       updateBubbles(a, t, dt);
     }
 
     for (const l of benchLamps) if (l.state !== 'idle' && t > l.until) l.state = 'idle';
+    updateExecution(t);
+    for (let i = comicTexts.length - 1; i >= 0; i--) if (t - comicTexts[i].t0 > comicTexts[i].dur) comicTexts.splice(i, 1);
 
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -724,6 +756,165 @@
         const b = pick(others);
         setTimeout(() => { if (agents.has(b.id) && b.activity === 'coffee') say(b, pick(REPLIES)); }, 2600);
       }
+    }
+  }
+
+  /* ================================================================
+   * Retraite à la pompe
+   * ================================================================ */
+  const GUN_HAND = { x: 165, y: 88 };
+  const EXEC = { pump: 700, fire: 1300, ghost: 2300, end: 4400 };
+
+  function updateExecution(t) {
+    if (!exec) {
+      if (execQueue.length && t > execCooldown) {
+        const id = execQueue.shift();
+        const a = agents.get(id);
+        if (!a) return;
+        exec = { id, t0: t, pumped: false, fired: false, ghosted: false };
+        say(getMain(), pick(EXEC_LINES).replace('{name}', a.name));
+      }
+      return;
+    }
+    const a = agents.get(exec.id);
+    if (!a) { exec = null; return; }
+    const el = t - exec.t0;
+    const main = getMain();
+    main.face = a.y < main.y ? 'up' : Math.abs(a.x - main.x) > 30 ? (a.x > main.x ? 'right' : 'left') : 'down';
+    if (!exec.pumped && el > EXEC.pump) {
+      exec.pumped = true;
+      comicTexts.push({ text: 'CLIC-CLAC', x: 160, y: 66, t0: t, dur: 650, size: 2.4, fill: '#f1fa8c', stroke: '#2a1a10' });
+    }
+    if (!exec.fired && el > EXEC.fire) {
+      exec.fired = true;
+      const dx = a.x - GUN_HAND.x, dy = (a.y - 8) - GUN_HAND.y, d = Math.hypot(dx, dy) || 1;
+      a.hitAt = t;
+      a.knock = { dx: dx / d, dy: dy / d };
+      a.bubbles = [];
+      shakeUntil = t + 280;
+      comicTexts.push({ text: 'BANG !', x: (GUN_HAND.x + a.x) / 2, y: Math.min(GUN_HAND.y, a.y) - 22, t0: t, dur: 900, size: 5, fill: '#ffd23f', stroke: '#c0392b' });
+      burst(a.x, a.y - 8, a.color, 16);
+      burst(a.x, a.y - 8, '#ffffff', 10);
+      const tip = gunTip(a, 0);
+      for (let i = 0; i < 8; i++) particles.push({ x: tip.x, y: tip.y, vx: rnd(-6, 6), vy: rnd(-18, -6), life: 0, max: rnd(0.8, 1.4), color: 'rgba(200,200,210,0.8)', size: 2, grav: 0 });
+      record(a, { timestamp: Date.now(), type: 'RETIRE' }, 'Retiré du service à la pompe');
+    }
+    if (exec.fired && !exec.landed && el > EXEC.fire + 380) {
+      exec.landed = true;
+      const pos = deadPos(a, t);
+      comicTexts.push({ text: 'K.O.', x: pos.x, y: pos.y - 10, t0: t, dur: 900, size: 2.6, fill: '#ffffff', stroke: '#2a1a10' });
+    }
+    if (!exec.ghosted && el > EXEC.ghost) {
+      exec.ghosted = true;
+      say(a, pick(GHOST_LINES));
+    }
+    if (el > EXEC.end) {
+      log(a, 'ERR', '💥 retiré du service à la pompe', { timestamp: Date.now() });
+      if (selectedId === a.id) closeInspector();
+      forgetAgent(a);
+      main.face = 'down';
+      exec = null;
+      execCooldown = t + 350;
+      treeDirty = true;
+      updateCounters();
+    }
+  }
+
+  function gunDir(a) {
+    const dx = a.x - GUN_HAND.x, dy = (a.y - 8) - GUN_HAND.y, d = Math.hypot(dx, dy) || 1;
+    return { x: dx / d, y: dy / d };
+  }
+  function gunTip(a, back) {
+    const d = gunDir(a);
+    return { x: GUN_HAND.x + d.x * (14 - back), y: GUN_HAND.y + d.y * (14 - back) };
+  }
+  function deadPos(a, t) {
+    const kt = (t - a.hitAt) / 1000;
+    const e = Math.min(1, kt / 0.35), ease = 1 - (1 - e) * (1 - e);
+    return { x: a.x + a.knock.dx * 8 * ease, y: a.y + a.knock.dy * 5 * ease - Math.sin(e * Math.PI) * 7, e, kt };
+  }
+
+  function drawShotgun(t) {
+    if (!exec) return;
+    const a = agents.get(exec.id);
+    if (!a) return;
+    const el = t - exec.t0;
+    if (el > EXEC.ghost) return;
+    const d = gunDir(a);
+    const perp = { x: -d.y, y: d.x };
+    const raise = Math.min(1, el / 400);
+    const recoil = exec.fired && el - EXEC.fire < 140 ? 2 : 0;
+    const pump = el > EXEC.pump && el < EXEC.pump + 360 ? Math.round(Math.sin((el - EXEC.pump) / 360 * Math.PI) * 2.5) : 0;
+    const dot = (s, off, col) => R(g, Math.round(GUN_HAND.x + d.x * (s - recoil) + perp.x * off), Math.round(GUN_HAND.y + d.y * (s - recoil) + perp.y * off), 1, 1, col);
+    const len = Math.round(14 * raise);
+    for (let s = -5; s < 0; s++) { dot(s, 0, '#6b4226'); dot(s, 1, '#8a5a32'); if (s < -2) dot(s, 2, '#6b4226'); }
+    for (let s = 0; s <= len; s++) { dot(s, 0, '#5b6070'); if (s < len - 1) dot(s, 1, '#3c404c'); }
+    if (len > 8) for (let s = 4 - pump; s <= 8 - pump; s++) { dot(s, 1, '#4a3020'); dot(s, 2, '#4a3020'); }
+    dot(len, 0, '#8a91a3');
+  }
+
+  function drawShotFx(t) {
+    if (!exec || !exec.fired) return;
+    const a = agents.get(exec.id);
+    if (!a) return;
+    const since = t - exec.t0 - EXEC.fire;
+    const tip = gunTip(a, 0);
+    if (since < 130) {
+      const x = Math.round(tip.x), y = Math.round(tip.y);
+      R(g, x - 3, y, 7, 1, '#ffd23f'); R(g, x, y - 3, 1, 7, '#ffd23f');
+      R(g, x - 2, y - 2, 5, 5, '#ffb347'); R(g, x - 1, y - 1, 3, 3, '#ffffff');
+      g.save(); g.globalCompositeOperation = 'lighter'; glow(x, y, 18, '#ffd23f', 0.5); g.restore();
+    }
+    if (since < 220) {
+      const alpha = 1 - since / 220;
+      const base = Math.atan2(a.y - 8 - tip.y, a.x - tip.x);
+      const dist = Math.hypot(a.x - tip.x, a.y - 8 - tip.y);
+      for (const spread of [-0.07, 0, 0.07]) {
+        for (let r = 0; r < dist; r += 3) {
+          g.fillStyle = `rgba(255,${200 + Math.round(r) % 55},120,${alpha * (1 - r / dist * 0.4)})`;
+          g.fillRect(Math.round(tip.x + Math.cos(base + spread) * r), Math.round(tip.y + Math.sin(base + spread) * r), 1, 1);
+        }
+      }
+    }
+  }
+
+  function drawDeadAgent(a, t) {
+    const pos = deadPos(a, t);
+    const { e, kt } = pos;
+    const bodyAlpha = kt < 1.0 ? 1 : Math.max(0, 1 - (kt - 1.0) / 1.8);
+    const side = a.knock.dx >= 0 ? 1 : -1;
+    if (bodyAlpha > 0) {
+      g.save();
+      g.globalAlpha = bodyAlpha;
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      g.fillRect(Math.round(pos.x) - 8, Math.round(a.y + a.knock.dy * 5 * Math.min(1, e)) - 1, 16, 2);
+      g.translate(Math.round(pos.x), Math.round(pos.y) - 4);
+      g.rotate(side * (Math.PI / 2) * e);
+      const clone = { ...a, id: '__dead', x: 0, y: 4, path: [], pose: 'stand', alpha: 1, errorUntil: 0, carrying: false, activity: 'done', face: 'down', hitAt: 0 };
+      drawAgent(clone, t);
+      if (kt < 0.12) { g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(-5, -12, 11, 17); }
+      g.restore();
+      if (e >= 1 && kt < 1.8) {
+        for (let i = 0; i < 3; i++) {
+          const ang = t / 180 + i * 2.1;
+          R(g, Math.round(pos.x + Math.cos(ang) * 6), Math.round(pos.y - 9 + Math.sin(ang) * 2), 1, 1, '#ffd23f');
+        }
+      }
+    }
+    if (kt > 1.0) {
+      const gk = kt - 1.0;
+      const gx = Math.round(pos.x + Math.sin(gk * 4) * 3), gy = Math.round(pos.y - 6 - gk * 24);
+      const alpha = Math.max(0, Math.min(0.9, 2.6 - gk) );
+      g.save();
+      g.globalAlpha = alpha;
+      R(g, gx - 3, gy - 11, 7, 1, '#f4f4ff'); R(g, gx - 4, gy - 10, 9, 9, '#f4f4ff');
+      const wv = Math.floor(t / 150) % 2;
+      for (let k = 0; k < 9; k += 2) R(g, gx - 4 + k + wv, gy - 1, 1, 1, '#f4f4ff');
+      R(g, gx - 2, gy - 7, 1, 2, '#2a2238'); R(g, gx + 2, gy - 7, 1, 2, '#2a2238'); R(g, gx, gy - 4, 1, 1, '#2a2238');
+      R(g, gx - 3, gy - 5, 1, 1, rgba(a.color, 0.9)); R(g, gx + 3, gy - 5, 1, 1, rgba(a.color, 0.9));
+      R(g, gx - 3, gy - 14, 7, 1, '#ffd23f'); R(g, gx - 4, gy - 13, 1, 1, '#ffd23f'); R(g, gx + 4, gy - 13, 1, 1, '#ffd23f');
+      g.restore();
+      a.ghostPos = { x: gx, y: gy };
     }
   }
 
@@ -856,10 +1047,10 @@
     }
   }
 
-  function drawClock(t) {
-    const cx = 207, cy = 14;
-    R(g, cx - 6, cy - 6, 13, 13, '#1b1528');
-    R(g, cx - 5, cy - 5, 11, 11, '#efe6d2');
+  function drawClock(t) { drawClockAt(207, 14); }
+  function drawClockAt(cx, cy, frameCol = '#1b1528', faceCol = '#efe6d2') {
+    R(g, cx - 6, cy - 6, 13, 13, frameCol);
+    R(g, cx - 5, cy - 5, 11, 11, faceCol);
     R(g, cx, cy - 5, 1, 1, '#8a7a66'); R(g, cx, cy + 5, 1, 1, '#8a7a66'); R(g, cx - 5, cy, 1, 1, '#8a7a66'); R(g, cx + 5, cy, 1, 1, '#8a7a66');
     const d = new Date();
     const ang = [((d.getHours() % 12) + d.getMinutes() / 60) / 12, d.getMinutes() / 60, d.getSeconds() / 60];
@@ -872,9 +1063,14 @@
 
   function drawWhiteboard(t) {
     R(g, 16, 8, 30, 1, '#c4cad8'); // titre griffonné
-    for (const s of whiteboard) {
+    drawStrokes(whiteboard, t);
+  }
+  function drawStrokes(strokes, t, opts = {}) {
+    const colorOf = opts.color || (s => s.color);
+    const lineCol = opts.line || '#555b6e';
+    for (const s of strokes) {
       const p = clamp((t - s.t0) / 700, 0, 1);
-      const col = s.color;
+      const col = colorOf(s);
       if (s.k === 'box') {
         const w = Math.round(s.w * p);
         R(g, s.x, s.y, w, 1, col); R(g, s.x, s.y + s.h, w, 1, col);
@@ -884,7 +1080,7 @@
         R(g, s.x, s.y, w, 1, col);
         if (p > 0.9) { R(g, s.x + s.w - 1, s.y - 1, 1, 1, col); R(g, s.x + s.w - 1, s.y + 1, 1, 1, col); }
       } else if (s.k === 'line') {
-        for (let i = 0; i < s.w * p; i += 2) R(g, s.x + i, s.y + (i % 4 ? 0 : 1), 2, 1, '#555b6e');
+        for (let i = 0; i < s.w * p; i += 2) R(g, s.x + i, s.y + (i % 4 ? 0 : 1), 2, 1, lineCol);
       } else {
         if (p > 0.2) { R(g, s.x + 1, s.y, 3, 1, col); R(g, s.x + 1, s.y + 4, 3, 1, col); }
         if (p > 0.6) { R(g, s.x, s.y + 1, 1, 3, col); R(g, s.x + 4, s.y + 1, 1, 3, col); }
@@ -1043,7 +1239,12 @@
     ['#ff6ac1', '#5ef1ff', '#f1fa8c', '#7ee787', '#ffb86b'].forEach((c, k) => {
       R(g, 57 + k * 4, 141, 2, 7, '#c9d6e3'); R(g, 57 + k * 4, 144 + (k % 2), 2, 4 - (k % 2), c);
     });
-    // voyants (un par poste)
+    drawBenchLamps(t);
+    // tour serveur au sol
+    drawBenchTower(t);
+  }
+
+  function drawBenchLamps(t) {
     const lampX = [18, 42, 66];
     benchLamps.forEach((l, k) => {
       const x = lampX[k] - 2, y = 133;
@@ -1055,7 +1256,9 @@
       R(g, x + 1, y, 3, 4, col); R(g, x + 1, y, 1, 1, shade(col, 0.4));
       if (glow) { g.fillStyle = rgba(glow, 0.22); g.fillRect(x - 3, y - 3, 11, 10); }
     });
-    // tour serveur au sol
+  }
+
+  function drawBenchTower(t) {
     R(g, 4, 176, 9, 22, '#23262f'); R(g, 5, 177, 7, 20, '#2f3340');
     for (let u = 0; u < 5; u++) R(g, 7, 179 + u * 4, 1, 1, hash(u + Math.floor(t / 300)) % 2 ? '#57f287' : '#1f3d29');
   }
@@ -1112,6 +1315,7 @@
    * Rendu : personnages
    * ================================================================ */
   function drawAgent(a, t) {
+    if (a.hitAt) return drawDeadAgent(a, t);
     const walking = a.path.length > 0;
     const sitting = !walking && a.pose === 'sit';
     const bob = walking ? -Math.abs(Math.round(Math.sin(a.walkT * 14))) : 0;
@@ -1251,6 +1455,47 @@
     g.fillStyle = v; g.fillRect(0, 0, W, H);
   }
 
+  /* ================================================================
+   * Mondes
+   * ================================================================ */
+  function darken(col) { g.fillStyle = col; g.fillRect(0, 0, W, H); }
+  function vignette(strength) {
+    const v = g.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 210);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(5,2,12,${strength})`);
+    g.fillStyle = v; g.fillRect(0, 0, W, H);
+  }
+  const busyAgents = () => [...agents.values()].filter(a => !a.path.length && !a.dying && !a.gone);
+  const worldApi = {
+    g, px: R, shade, rgba, hash, seeded, roundRect, glow, now, CODE_DESKS, MAIN_ID,
+    codeUser: i => busyAgents().find(a => a.station === 'code' && a.slot === i && a.activity === 'coding') || null,
+    readers: () => busyAgents().filter(a => a.station === 'library' && a.slot >= 0),
+    anyReading: () => busyAgents().some(a => a.station === 'library'),
+    agentsIn: activity => busyAgents().filter(a => a.activity === activity).length,
+    mainActive: () => { const m = agents.get(MAIN_ID); return !!m && now() - m.lastToolAt < 2500; },
+    benchRunning: () => benchLamps.some(l => l.state === 'run'),
+    deskPile: () => deskPile,
+    drawBenchLamps, drawStrokes, drawClock: drawClockAt, darken, vignette
+  };
+  const STUDIO = {
+    id: 'studio', name: 'Studio dev', icon: '💻', claudeTitle: 'Orchestrateur', glyphs: CODE_GLYPHS, status: {},
+    background: () => drawStaticBackground(),
+    top: t => { drawWindow(t); drawStringLights(t); drawClock(t); drawShelfActivity(t); drawServers(t); },
+    board: t => drawWhiteboard(t),
+    props: t => propList(t),
+    lighting: t => drawLighting(t)
+  };
+  const WORLDS = { studio: STUDIO };
+  for (const [id, factory] of Object.entries(window.ROOM_WORLDS || {})) {
+    try { WORLDS[id] = factory(worldApi); } catch (err) { console.error(`Monde "${id}" ignoré :`, err); }
+  }
+  let world = STUDIO;
+  function setWorld(id) {
+    world = WORLDS[id] || STUDIO;
+    bgx.clearRect(0, 0, W, H);
+    world.background(bgx, seeded(42));
+    treeDirty = true;
+  }
+
   function drawEffects(t) {
     for (const b of beams) {
       const p = (t - b.t0) / b.dur;
@@ -1315,7 +1560,8 @@
     for (const a of agents.values()) {
       if (a.alpha < 0.3) continue;
       const isMain = a.id === MAIN_ID;
-      const label = isMain ? 'Claude · Orchestrateur' : `${a.name} · ${a.role}`;
+      if (a.hitAt) continue;
+      const label = isMain ? `Claude · ${world.claudeTitle}` : `${a.name} · ${a.role}`;
       const bw = ctx.measureText(label).width + p * 4, bh = tagSize + p * 2;
       const cx = (isMain ? 160 : a.x) * U;
       const cy = (isMain ? 111 : a.y + (a.pose === 'sit' && !a.path.length ? 6 : 4)) * U;
@@ -1370,15 +1616,16 @@
       const lines = full.map(l => { const part = l.slice(0, Math.max(0, remaining)); remaining -= l.length + 1; return part; });
       const w = Math.max(...full.map(l => ctx.measureText(l).width)) + p * 6;
       const h = full.length * lh + p * 5;
-      const headY = (a.y - (a.pose === 'sit' && !a.path.length ? 16 : 19) - (a.id === MAIN_ID ? 6 : 0)) * U;
-      let x = Math.round(a.x * U - w / 2);
+      const anchor = a.hitAt && a.ghostPos ? { x: a.ghostPos.x, y: a.ghostPos.y + 4 } : { x: a.x, y: a.y };
+      const headY = (anchor.y - (a.pose === 'sit' && !a.path.length ? 16 : 19) - (a.id === MAIN_ID ? 6 : 0)) * U;
+      let x = Math.round(anchor.x * U - w / 2);
       x = clamp(x, p, canvas.width - w - p);
       let fade = 1;
       if (b.doneAt) {
         const hold = a.bubbles.length > 1 ? BUBBLE_HOLD * 0.6 : BUBBLE_HOLD;
         fade = clamp(1 - (t - b.doneAt - hold) / 300, 0, 1);
       }
-      items.push({ a, b, lines, w, h, x, y: Math.round(headY - h - p * 3), ax: a.x * U, ay: headY, fade });
+      items.push({ a, b, lines, w, h, x, y: Math.round(headY - h - p * 3), ax: anchor.x * U, ay: headY, fade });
     }
     // empilement sans chevauchement
     items.sort((m, n) => n.ay - m.ay);
@@ -1427,6 +1674,26 @@
       }
     }
     ctx.globalAlpha = 1;
+
+    // onomatopées
+    for (const c of comicTexts) {
+      const age = t - c.t0;
+      const pop = 1 + 0.5 * Math.max(0, 1 - age / 140);
+      const size = Math.round(c.size * U * pop);
+      ctx.font = `600 ${size}px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = clamp((c.dur - age) / (c.dur * 0.3), 0, 1);
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = Math.max(3, Math.round(U * 1.2));
+      ctx.strokeStyle = c.stroke;
+      const x = clamp(c.x * U, size * 2, canvas.width - size * 2), y = Math.max(size, c.y * U);
+      ctx.strokeText(c.text, x, y);
+      ctx.fillStyle = c.fill;
+      ctx.fillText(c.text, x, y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
   }
 
   /* ================================================================
@@ -1440,24 +1707,23 @@
 
     g.clearRect(0, 0, W, H);
     g.drawImage(bg, 0, 0);
-    drawWindow(t);
-    drawStringLights(t);
-    drawClock(t);
-    drawWhiteboard(t);
-    drawShelfActivity(t);
-    drawServers(t);
+    world.top(t);
+    world.board(t, whiteboard);
 
-    const drawables = propList(t);
+    const drawables = world.props(t);
     for (const a of agents.values()) drawables.push({ y: a.y + (a.pose === 'sit' && !a.path.length ? 2 : 0) + 0.5, draw: () => drawAgent(a, t) });
     drawables.sort((m, n) => m.y - n.y);
     for (const d of drawables) d.draw();
+    drawShotgun(t);
 
     drawEffects(t);
-    drawLighting(t);
+    world.lighting(t);
+    drawShotFx(t);
 
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(buf, 0, 0, W * S, H * S);
+    const shake = t < shakeUntil ? S * 2 : 0;
+    ctx.drawImage(buf, shake ? Math.round(rnd(-1, 1)) * shake : 0, shake ? Math.round(rnd(-1, 1)) * shake : 0, W * S, H * S);
     drawOverlay(t);
 
     if (treeDirty) { treeDirty = false; renderTree(); }
@@ -1469,10 +1735,11 @@
    * ================================================================ */
   function statusOf(a) {
     if (a.gone) return 'Parti';
+    if (a.dying) return a.hitAt ? '💥 Retiré' : 'Va être retiré…';
     if (a.errorUntil > now()) return STATUS_LABEL.error;
     if (a.path.length) return STATUS_LABEL.walking;
     if (a.done && a.activity !== 'handoff') return a.activity === 'coffee' ? 'Terminé · café' : STATUS_LABEL.done;
-    return STATUS_LABEL[a.activity] || a.activity;
+    return (world.status && world.status[a.activity]) || STATUS_LABEL[a.activity] || a.activity;
   }
 
   setInterval(() => { treeDirty = true; }, 500);
@@ -1518,7 +1785,7 @@
   }
 
   function updateCounters() {
-    const active = [...agents.values()].filter(a => a.id !== MAIN_ID && !a.done && !a.gone).length;
+    const active = [...agents.values()].filter(a => a.id !== MAIN_ID && !a.done && !a.gone && !a.dying).length;
     $('#c-agents').textContent = active;
     $('#c-tools').textContent = counters.tools;
     $('#c-events').textContent = counters.events;
@@ -1729,11 +1996,50 @@
   });
 
   /* ================================================================
+   * Sélecteurs de monde et de fin
+   * ================================================================ */
+  function readPref(key, fallback) {
+    const q = new URLSearchParams(location.search).get(key);
+    if (q) return q;
+    try { return localStorage.getItem(`agent-room:${key}`) || fallback; } catch { return fallback; }
+  }
+  function savePref(key, value) {
+    try { localStorage.setItem(`agent-room:${key}`, value); } catch { /* stockage indisponible */ }
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set(key, value);
+      history.replaceState(null, '', url);
+    } catch { /* file:// */ }
+  }
+  function initPickers() {
+    const ws = $('#world-select'), es = $('#ending-select');
+    for (const w of Object.values(WORLDS)) {
+      const o = document.createElement('option');
+      o.value = w.id; o.textContent = `${w.icon} ${w.name}`;
+      ws.appendChild(o);
+    }
+    const wid = WORLDS[readPref('world', 'studio')] ? readPref('world', 'studio') : 'studio';
+    ws.value = wid; setWorld(wid);
+    ws.addEventListener('change', () => { setWorld(ws.value); savePref('world', ws.value); });
+    const fin = readPref('fin', 'pompe');
+    endingMode = fin === 'cafe' ? 'cafe' : 'pompe';
+    es.value = endingMode;
+    es.addEventListener('change', () => {
+      endingMode = es.value;
+      savePref('fin', endingMode);
+      for (const a of agents.values()) {
+        if (endingMode === 'pompe') { if (a.done && !a.dying && a.activity === 'coffee') a.retireAt = now() + RETIRE_DELAY; }
+        else a.retireAt = 0;
+      }
+    });
+  }
+
+  /* ================================================================
    * Démarrage
    * ================================================================ */
   function start() {
     resize();
-    drawStaticBackground();
+    initPickers();
     getMain();
     colorIndex = 1;
     updateCounters();
@@ -1750,5 +2056,5 @@
   fontsReady.then(start, start);
 
   // Accès console pour expérimenter : roomDebug.emit({...})
-  window.roomDebug = { emit: emitLocal, agents, stations: STATIONS, findPath };
+  window.roomDebug = { emit: emitLocal, agents, stations: STATIONS, findPath, setWorld, worlds: WORLDS, execution: () => exec };
 })();

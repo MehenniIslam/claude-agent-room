@@ -15,6 +15,30 @@ Chaque sous-agent apparaît dans un rayon de lumière, marche vers le poste qui 
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## 4 mondes au choix
+
+![Studio, Opéra, Jardin, Salle de classe](docs/worlds.png)
+
+Choisis le décor dans la barre du haut (menu **Monde**). Le changement est instantané, même en pleine mission, et ton choix est mémorisé.
+
+| Monde | Claude est… | Planifier | Lire / chercher | Coder | Tester (Bash) | Pause |
+|---|---|---|---|---|---|---|
+| 💻 Studio dev | Orchestrateur | tableau blanc | bibliothèque + serveurs | 4 bureaux dev | banc de test | canapé + café |
+| 🎭 Opéra | Chef d'orchestre | grande partition | partitions + orgue | pupitres des musiciens | régie son & lumière | loge VIP |
+| 🌻 Jardin | Jardinier en chef | plan du potager | serre + ruches | carrés potagers | établi d'arrosage | barbecue |
+| 🏫 Salle de classe | Professeur | tableau noir | bibliothèque + aquarium | pupitres d'élèves | paillasse de sciences | coin récré |
+
+Lien direct vers un monde : `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
+
+## Fin des agents : à la pompe 💥 ou pause café ☕
+
+Un sous-agent Claude Code qui a rendu son rapport ne sera plus jamais rappelé. Par défaut, la chambre le montre sans détour : après sa pause au canapé, **Claude sort un fusil à pompe**. Clic-clac, BANG, l'agent est projeté K.O. puis s'envole en petit fantôme qui lâche une dernière réplique. C'est du pur cartoon : pas de sang, juste des étoiles et un halo.
+
+![Retraite à la pompe](docs/retraite.png)
+
+- S'il est rappelé avant le tir (nouvel appel d'outil), il est épargné et retourne au travail.
+- Préfère la version douce ? Choisis **☕ Pause café** dans le menu *Fin des agents* (ou `?fin=cafe`) : les agents terminés restent au canapé.
+
 ## Démarrage (30 secondes)
 
 Prérequis : [Node.js](https://nodejs.org) 18 ou plus récent.
@@ -149,7 +173,7 @@ Depuis un script Python ou TypeScript (Anthropic SDK, serveur MCP…), il suffit
 - **Déplacements** : pathfinding A* sur grille avec lissage, marche rebondissante et poussière.
 - **Postes** : écrans qui s'allument et particules de code à l'îlot, schémas qui se dessinent au tableau, livres tirés des étagères, voyants orange / vert / rouge au banc de test.
 - **Bulles** : effet machine à écrire, 4 s de lecture, empilement sans chevauchement, bulles rouges pour les erreurs.
-- **Fin de mission** : l'agent apporte un dossier à Claude (animation), lit son rapport, puis part au canapé (ou disparaît si le coin est plein). Les agents au repos discutent entre eux.
+- **Fin de mission** : l'agent apporte un dossier à Claude (animation), lit son rapport, puis part au canapé, où les agents au repos discutent entre eux… jusqu'à leur retraite à la pompe (ou pas, en mode pause café).
 - **HUD** : statut WebSocket, compteurs, arbre hiérarchique en direct, journal horodaté, fiche détaillée au clic (prompt initial, fichiers touchés, historique).
 
 ## Structure
@@ -166,9 +190,33 @@ claude-agent-room/
 └── public/
     ├── index.html        # HUD
     ├── style.css
-    ├── app.js            # moteur pixel art, animations, bulles, client WebSocket
+    ├── app.js            # moteur pixel art, monde Studio, animations, bulles, client WebSocket
+    ├── worlds.js         # mondes Opéra, Jardin, Salle de classe
     └── demo-scenario.js  # scénario partagé serveur / navigateur
 ```
+
+## Ajouter ton propre monde
+
+Tous les mondes partagent la même disposition (postes, obstacles, chemins). Un monde ne fait que redessiner le décor par-dessus. Pour en créer un, ajoute une fonction dans `public/worlds.js` et enregistre-la dans `ROOM_WORLDS` :
+
+```js
+function spaceship(api) {
+  const { px, g } = api;            // px(contexte, x, y, largeur, hauteur, couleur)
+  return {
+    id: 'spaceship', name: 'Vaisseau spatial', icon: '🚀', claudeTitle: 'Commandant',
+    glyphs: ['✦', '01', '◉'],       // particules au poste "code"
+    status: { coding: 'Pilote', reading: 'Scanne', planning: 'Trace la route', bash: 'Teste les moteurs', coffee: 'En cabine' },
+    background(c, rand) { /* sol, murs, meubles fixes (dessinés une seule fois) */ },
+    top(t) { /* animations du mur : étoiles, écrans… */ },
+    board(t, strokes) { api.drawStrokes(strokes, t); },
+    props(t) { return [ /* { y: ligne de base, draw: () => … } triés avec les personnages */ ]; },
+    lighting(t) { api.vignette(0.4); }
+  };
+}
+root.ROOM_WORLDS = { opera, garden, classroom, spaceship };
+```
+
+Les emplacements à respecter sont listés en tête de `worlds.js`. L'objet `api` donne aussi l'état de la chambre : `codeUser(i)`, `readers()`, `benchRunning()`, `mainActive()`, `deskPile()`, etc.
 
 ## Réglages
 
