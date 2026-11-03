@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Claude Agent Room</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 8 8%27 shape-rendering=%27crispEdges%27%3E%3Cpath fill=%27%23d97757%27 d=%27M3 0h2v3h3v2H5v3H3V5H0V3h3z%27/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Claude Agent Room</h1>
+        <p class="tagline">orchestrateur &amp; sous-agents, en direct</p>
+      </div>
+    </div>
+
+    <div id="status" class="status status--connecting" title="État de la connexion WebSocket">
+      <span class="dot"></span><span class="label">Connexion…</span>
+    </div>
+
+    <dl class="counters">
+      <div><dt>Agents actifs</dt><dd id="c-agents">0</dd></div>
+      <div><dt>Appels d'outils</dt><dd id="c-tools">0</dd></div>
+      <div><dt>Événements</dt><dd id="c-events">0</dd></div>
+    </dl>
+
+    <div class="actions">
+      <button id="btn-demo" class="btn btn--primary" type="button">▶ Lancer Simulation Démo</button>
+      <button id="btn-spawn" class="btn" type="button">✦ Tester un Spawn</button>
+      <button id="btn-reset" class="btn btn--ghost" type="button" title="Vider la chambre">⟲</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <canvas id="room" aria-label="Chambre des agents en pixel art"></canvas>
+      <div id="empty-hint" class="empty-hint hidden">
+        <strong>La chambre est calme.</strong>
+        <span>Lance la démo, ou branche Claude Code : <code>npm run hooks:install</code></span>
+      </div>
+
+      <article id="inspector" class="inspector hidden" aria-live="polite">
+        <header>
+          <span class="swatch" id="i-swatch"></span>
+          <div>
+            <h2 id="i-name">Agent</h2>
+            <p><span id="i-role" class="role-chip">Role</span> <span id="i-status" class="muted"></span></p>
+          </div>
+          <button id="i-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+        </header>
+        <section>
+          <h3>Prompt initial</h3>
+          <pre id="i-prompt" class="prompt"></pre>
+        </section>
+        <section>
+          <h3>Fichiers touchés <span id="i-files-count" class="muted"></span></h3>
+          <ul id="i-files" class="files"></ul>
+        </section>
+        <section>
+          <h3>Historique des actions</h3>
+          <ol id="i-history" class="history"></ol>
+        </section>
+      </article>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <h2 class="panel-title">Hiérarchie</h2>
+        <ul id="tree" class="tree"></ul>
+      </section>
+      <section class="panel panel--grow">
+        <h2 class="panel-title">Journal en direct <button id="btn-clear-log" class="link-btn" type="button">effacer</button></h2>
+        <ol id="log" class="log"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <script src="demo-scenario.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

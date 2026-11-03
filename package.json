@@ -1,0 +1,42 @@
+{
+  "name": "claude-agent-room",
+  "version": "1.0.0",
+  "description": "Visualiseur temps réel d'un agent Claude orchestrateur et de ses sous-agents dans une chambre en pixel art.",
+  "main": "server/index.js",
+  "bin": {
+    "claude-agent-room": "server/index.js",
+    "claude-agent-room-hook": "bridge/claude-hook.js"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "demo": "node -e \"fetch('http://localhost:3030/api/demo',{method:'POST'}).then(r=>r.json()).then(console.log)\"",
+    "hooks:install": "node bridge/setup-hooks.js",
+    "hooks:install:project": "node bridge/setup-hooks.js --project",
+    "hooks:remove": "node bridge/setup-hooks.js --remove",
+    "watch:transcript": "node bridge/claude-hook.js --jsonl"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agents",
+    "subagents",
+    "visualizer",
+    "pixel-art",
+    "websocket"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MehenniIslam/claude-agent-room.git"
+  },
+  "homepage": "https://github.com/MehenniIslam/claude-agent-room#readme",
+  "author": "MehenniIslam"
+}
