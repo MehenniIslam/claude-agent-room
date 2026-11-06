@@ -1,0 +1,14 @@
+{
+  "name": "claude-agent-room",
+  "owner": {
+    "name": "MehenniIslam"
+  },
+  "plugins": [
+    {
+      "name": "agent-room",
+      "source": "./plugin/agent-room",
+      "description": "La chambre pixel art des agents Claude, en direct dans un panneau à côté de la conversation, avec les fichiers que Claude crée et modifie."
+    }
+  ],
+  "description": "La chambre pixel art des agents Claude : sous-agents en direct et fichiers modifiés, dans un panneau."
+}

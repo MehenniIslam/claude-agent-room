@@ -15,6 +15,32 @@ Chaque sous-agent apparaît dans un rayon de lumière, marche vers le poste qui 
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## 🧩 Le plus simple : le plugin Claude (rien à lancer)
+
+La chambre existe aussi en **plugin pour Claude Code**. Elle s'ouvre dans un panneau à côté de la conversation : pas de serveur, pas de site, pas de hooks à configurer.
+
+<img src="docs/plugin-studio.png" width="420" alt="La chambre dans le panneau de Claude"> <img src="docs/plugin-pompe.png" width="420" alt="Retraite à la pompe dans l'Opéra">
+
+Dans un terminal Claude Code, tape :
+
+```
+/plugin install agent-room --marketplace MehenniIslam/claude-agent-room
+```
+
+Réponds `y` pour ajouter le marketplace, puis choisis la portée « user » avec Entrée. Hors session, la même chose s'écrit `claude plugin install agent-room --marketplace MehenniIslam/claude-agent-room`.
+
+Dans l'app de bureau (où `/plugin` ne s'exécute pas) : clique sur **+** à côté de la zone de saisie, puis **Plugins**, **Add marketplace** avec `MehenniIslam/claude-agent-room`, puis **Add plugin**.
+
+Le panneau s'ouvre tout seul à chaque session (sinon tape `/agent-room`). Il montre :
+- **la chambre** avec Claude et chaque sous-agent qu'il crée : ils marchent vers leur poste selon l'outil utilisé, parlent dans des bulles, rendent leur rapport puis partent en pause… ou se font retirer à la pompe ;
+- **« Ce que Claude modifie »** : chaque fichier créé (✚) ou modifié (✎) avec ses lignes ajoutées et supprimées et l'auteur (Claude ou tel sous-agent). Clique sur un fichier pour voir son dernier changement en diff coloré ;
+- **le journal** des dernières actions ;
+- les menus **Monde** (Studio, Opéra, Jardin, Salle de classe) et **Fin** (💥 À la pompe / ☕ Pause café), mémorisés d'une session à l'autre.
+
+Dans le terminal, qui ne sait pas afficher d'images, le panneau montre la même chose en texte.
+
+La version web ci-dessous (serveur + navigateur) reste utile pour afficher la chambre en grand sur un deuxième écran, ou pour y envoyer des événements depuis tes propres scripts.
+
 ## 4 mondes au choix
 
 ![Studio, Opéra, Jardin, Salle de classe](docs/worlds.png)
@@ -180,6 +206,12 @@ Depuis un script Python ou TypeScript (Anthropic SDK, serveur MCP…), il suffit
 
 ```
 claude-agent-room/
+├── .claude-plugin/
+│   └── marketplace.json  # rend le dépôt installable avec /plugin install
+├── plugin/agent-room/    # le plugin Claude : panneau SVG, suivi des agents et des fichiers
+│   ├── hooks/register.tsx
+│   ├── hooks/scene.ts    # la chambre en SVG animé (4 mondes, retraite à la pompe)
+│   └── tests/room.test.tsx
 ├── package.json
 ├── server/
 │   ├── index.js          # Express + ws : /api/event, /api/demo, /ws

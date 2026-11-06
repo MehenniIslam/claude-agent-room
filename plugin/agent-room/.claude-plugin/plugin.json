@@ -1,0 +1,11 @@
+{
+  "name": "agent-room",
+  "version": "0.1.0",
+  "description": "La chambre pixel art des agents Claude, en direct dans un panneau à côté de la conversation, avec les fichiers que Claude modifie.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "MehenniIslam"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/MehenniIslam/claude-agent-room"
+}
