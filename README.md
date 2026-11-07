@@ -1,51 +1,158 @@
+<div align="center">
+
 # 🛋️ claude-agent-room
+
+**Regarde Claude et ses sous-agents travailler, en direct, dans une chambre en pixel art.**
+
+[![CI](https://github.com/MehenniIslam/claude-agent-room/actions/workflows/ci.yml/badge.svg)](https://github.com/MehenniIslam/claude-agent-room/actions/workflows/ci.yml)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-d97757.svg)](LICENSE)
+[![Node ≥ 18.17](https://img.shields.io/badge/node-%E2%89%A5%2018.17-5ef1ff.svg)](https://nodejs.org)
+[![Local-first](https://img.shields.io/badge/donn%C3%A9es-100%25%20locales-7ee787.svg)](SECURITY.md)
 
 ![La chambre en pleine démo](docs/screenshot.png)
 
-Visualiseur **temps réel** d'un agent Claude orchestrateur et de ses sous-agents, dans une chambre de dev en **pixel art lo-fi**.
-Chaque sous-agent apparaît dans un rayon de lumière, marche vers le poste qui correspond à l'outil qu'il utilise, parle dans des bulles, puis revient remettre son rapport à Claude avant d'aller boire un café.
+[Installation](#-installation) · [Brancher Claude Code](#-brancher-claude-code) · [Utilisation](#-utilisation) · [Sécurité](#-sécurité-et-confidentialité) · [Dépannage](#-dépannage) · [API](#-protocole-dévénements)
 
-```
-┌────────────── Chambre (canvas 320×208, agrandi en pixels nets) ──────────────┐
-│ Tableau blanc        Fenêtre    Horloge    Bibliothèque + serveurs RAG       │
-│ (Task, TodoWrite)                          (Read, Grep, Glob, WebSearch)     │
-│                     Bureau de Claude (2 écrans, plante, café)               │
-│ Banc de test          Îlot de code (4 bureaux)          Coin canapé + café   │
-│ (Bash, voyants)       (Write, Edit, MultiEdit)          (terminé / en pause) │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+</div>
 
-## 🧩 Le plus simple : le plugin Claude (rien à lancer)
+---
 
-La chambre existe aussi en **plugin pour Claude Code**. Elle s'ouvre dans un panneau à côté de la conversation : pas de serveur, pas de site, pas de hooks à configurer.
+Chaque sous-agent que Claude crée apparaît dans un rayon de lumière, **marche vers le poste qui correspond à l'outil qu'il utilise** (bibliothèque pour lire, bureaux pour coder, banc de test pour `Bash`…), parle dans des bulles, puis revient remettre son rapport à Claude. Ensuite ? Pause café… ou retraite à la pompe. 💥
+
+## ✨ Ce que tu obtiens
+
+- 🎮 **Une chambre vivante** : pathfinding A*, animations, bulles qui s'empilent, voyants verts/rouges quand les tests passent ou cassent.
+- 🌍 **4 mondes** : Studio dev, Opéra, Jardin, Salle de classe, changeables en pleine mission.
+- 🗂️ **Le suivi des fichiers** : tout ce que les agents créent ✚, modifient ✎ ou lisent ◌, avec l'auteur.
+- 🧭 **Le contexte complet** : arbre des agents, journal filtrable, fiche détaillée (prompt initial, historique) au clic.
+- 🔌 **Deux façons de l'utiliser** : en **plugin** dans un panneau de Claude Code (rien à lancer), ou en **page web** sur un deuxième écran.
+- 🔒 **Local et sûr** : aucune donnée ne quitte ta machine, les clés API et mots de passe sont masqués, les autres sites ne peuvent pas espionner la chambre.
+
+## 🚀 Installation
+
+Trois options, de la plus simple à la plus complète.
+
+### Option 1 — Le plugin Claude Code (rien à lancer)
+
+La chambre s'ouvre dans un panneau à côté de la conversation. Pas de serveur, pas de hooks à configurer.
 
 <img src="docs/plugin-studio.png" width="420" alt="La chambre dans le panneau de Claude"> <img src="docs/plugin-pompe.png" width="420" alt="Retraite à la pompe dans l'Opéra">
 
-Dans un terminal Claude Code, tape :
+Dans une session Claude Code (terminal), tape :
 
 ```
 /plugin install agent-room --marketplace MehenniIslam/claude-agent-room
 ```
 
-Réponds `y` pour ajouter le marketplace, puis choisis la portée « user » avec Entrée. Hors session, la même chose s'écrit `claude plugin install agent-room --marketplace MehenniIslam/claude-agent-room`.
+Réponds `y` pour ajouter le marketplace, puis choisis la portée « user » avec Entrée. Depuis un shell, c'est la même chose :
 
-Dans l'app de bureau (où `/plugin` ne s'exécute pas) : clique sur **+** à côté de la zone de saisie, puis **Plugins**, **Add marketplace** avec `MehenniIslam/claude-agent-room`, puis **Add plugin**.
+```bash
+claude plugin install agent-room --marketplace MehenniIslam/claude-agent-room
+```
 
-Le panneau s'ouvre tout seul à chaque session (sinon tape `/agent-room`). Il montre :
-- **la chambre** avec Claude et chaque sous-agent qu'il crée : ils marchent vers leur poste selon l'outil utilisé, parlent dans des bulles, rendent leur rapport puis partent en pause… ou se font retirer à la pompe ;
-- **« Ce que Claude modifie »** : chaque fichier créé (✚) ou modifié (✎) avec ses lignes ajoutées et supprimées et l'auteur (Claude ou tel sous-agent). Clique sur un fichier pour voir son dernier changement en diff coloré ;
-- **le journal** des dernières actions ;
-- les menus **Monde** (Studio, Opéra, Jardin, Salle de classe) et **Fin** (💥 À la pompe / ☕ Pause café), mémorisés d'une session à l'autre.
+Dans l'**app de bureau** (où `/plugin` ne s'exécute pas) : **+** à côté de la zone de saisie → **Plugins** → **Add marketplace** avec `MehenniIslam/claude-agent-room` → **Add plugin**.
 
-Dans le terminal, qui ne sait pas afficher d'images, le panneau montre la même chose en texte.
+Le panneau s'ouvre tout seul à chaque session (sinon tape `/agent-room`). Il montre la chambre, **« Ce que Claude modifie »** (chaque fichier avec ses lignes `+/−` et un diff coloré au clic), le journal, et les menus **Monde** et **Fin**. Dans un terminal sans images, le panneau affiche la même chose en texte.
 
-La version web ci-dessous (serveur + navigateur) reste utile pour afficher la chambre en grand sur un deuxième écran, ou pour y envoyer des événements depuis tes propres scripts.
+### Option 2 — La page web en une commande
 
-## 4 mondes au choix
+Prérequis : [Node.js](https://nodejs.org) 18.17 ou plus récent (`node -v` pour vérifier).
+
+```bash
+npx github:MehenniIslam/claude-agent-room --open
+```
+
+La chambre s'ouvre sur **http://localhost:3030**. Clique sur **▶ Lancer la démo** pour voir une mission complète (5 sous-agents, un test qui casse, une correction) — aucun token consommé. Pour voir tes vrais agents, passe à [Brancher Claude Code](#-brancher-claude-code).
+
+### Option 3 — Depuis le code source
+
+```bash
+git clone https://github.com/MehenniIslam/claude-agent-room.git
+cd claude-agent-room
+npm install
+npm start            # ou : npm run open  (ouvre le navigateur)
+```
+
+> 💡 Pas de serveur du tout ? Ouvre directement `public/index.html` : la page passe en **Mode démo** et joue la simulation localement.
+
+## 🔌 Brancher Claude Code
+
+La page web reçoit les événements de Claude Code grâce à des [hooks](https://docs.claude.com/en/docs/claude-code/hooks). Une commande les installe :
+
+```bash
+npx github:MehenniIslam/claude-agent-room hooks install
+```
+
+(ou `npm run hooks:install` depuis le dossier cloné). Ensuite :
+
+1. Laisse la chambre tourner (option 2 ou 3 ci-dessus).
+2. Relance Claude Code, et tape `/hooks` pour vérifier que les hooks sont là.
+3. Donne-lui une tâche avec des sous-agents, par exemple :
+   *« Utilise un sous-agent pour explorer le code d'authentification, puis un autre pour écrire les tests. »*
+
+Le badge en haut de la page passe à **En direct · Claude Code branché** dès le premier événement.
+
+**Vérifier que tout marche** — une seule commande contrôle Node, les dépendances, le serveur, les hooks, et envoie une bulle de test :
+
+```bash
+npx github:MehenniIslam/claude-agent-room doctor
+```
+
+<details>
+<summary><b>Ce que fait l'installation, exactement</b></summary>
+
+- copie le script du hook dans `~/.claude/agent-room/claude-hook.js` : il continue de marcher même si tu déplaces ou supprimes le dépôt ;
+- ajoute 6 hooks (`PreToolUse`, `PostToolUse`, `SubagentStart`, `SubagentStop`, `UserPromptSubmit`, `Stop`) dans `~/.claude/settings.json` ;
+- **sauvegarde** d'abord ton `settings.json` (`settings.json.bak-<date>`), écrit de façon atomique et **conserve tes autres hooks** ;
+- peut être relancée sans créer de doublons.
+
+Variantes :
+
+| Commande | Effet |
+|---|---|
+| `… hooks install --project` | Installe pour le projet courant seulement (`./.claude/settings.json`) |
+| `… hooks install --dry-run` | Affiche le résultat sans rien écrire |
+| `… hooks status` | Indique si les hooks sont installés |
+| `… hooks remove` | Retire proprement les hooks (ajoute `--project` si besoin) |
+
+Le hook ne bloque **jamais** Claude : délai max 700 ms, aucune sortie, code de sortie 0 même si la chambre est fermée. Pour le couper temporairement : `AGENT_ROOM_DISABLED=1`.
+
+Si ta version de Claude Code ne connaît pas `SubagentStart`, ce n'est pas grave : la chambre fonctionne sans.
+</details>
+
+<details>
+<summary><b>Alternative sans hooks : suivre un transcript</b></summary>
+
+```bash
+npx github:MehenniIslam/claude-agent-room watch                       # le transcript le plus récent de ~/.claude/projects
+npx github:MehenniIslam/claude-agent-room watch ~/.claude/projects/   # tout un dossier (sous-agents inclus)
+```
+
+Seules les nouvelles lignes sont rejouées.
+</details>
+
+## 🎮 Utilisation
+
+### L'interface
+
+| Zone | Ce qu'elle montre |
+|---|---|
+| **Chambre** | Claude au centre, les sous-agents à leur poste. Clique sur un personnage pour ouvrir sa fiche. |
+| **Hiérarchie** | L'arbre des agents et ce que chacun fait en ce moment. |
+| **Journal** | Chaque action horodatée, filtrable : *Outils*, *Messages*, *Erreurs*. |
+| **Fichiers** | Les fichiers créés ✚, modifiés ✎ ou lus ◌, et par qui. |
+
+### Raccourcis clavier
+
+| Touche | Action | | Touche | Action |
+|:-:|---|---|:-:|---|
+| <kbd>D</kbd> | Lancer la démo | | <kbd>W</kbd> | Monde suivant |
+| <kbd>S</kbd> | Faire apparaître un agent de test | | <kbd>F</kbd> | Plein écran |
+| <kbd>R</kbd> | Vider la chambre | | <kbd>?</kbd> | Aide |
+
+### 4 mondes au choix
 
 ![Studio, Opéra, Jardin, Salle de classe](docs/worlds.png)
-
-Choisis le décor dans la barre du haut (menu **Monde**). Le changement est instantané, même en pleine mission, et ton choix est mémorisé.
 
 | Monde | Claude est… | Planifier | Lire / chercher | Coder | Tester (Bash) | Pause |
 |---|---|---|---|---|---|---|
@@ -54,122 +161,91 @@ Choisis le décor dans la barre du haut (menu **Monde**). Le changement est inst
 | 🌻 Jardin | Jardinier en chef | plan du potager | serre + ruches | carrés potagers | établi d'arrosage | barbecue |
 | 🏫 Salle de classe | Professeur | tableau noir | bibliothèque + aquarium | pupitres d'élèves | paillasse de sciences | coin récré |
 
-Lien direct vers un monde : `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
+Le choix est mémorisé. Lien direct : `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
 
-## Fin des agents : à la pompe 💥 ou pause café ☕
+### Fin des agents : à la pompe 💥 ou pause café ☕
 
-Un sous-agent Claude Code qui a rendu son rapport ne sera plus jamais rappelé. Par défaut, la chambre le montre sans détour : après sa pause au canapé, **Claude sort un fusil à pompe**. Clic-clac, BANG, l'agent est projeté K.O. puis s'envole en petit fantôme qui lâche une dernière réplique. C'est du pur cartoon : pas de sang, juste des étoiles et un halo.
+Un sous-agent qui a rendu son rapport ne sera plus jamais rappelé. Par défaut, la chambre le montre sans détour : après sa pause au canapé, **Claude sort un fusil à pompe**. Clic-clac, BANG, l'agent part en petit fantôme avec une dernière réplique. Pur cartoon : des étoiles et un halo, rien de plus.
 
 ![Retraite à la pompe](docs/retraite.png)
 
-- S'il est rappelé avant le tir (nouvel appel d'outil), il est épargné et retourne au travail.
-- Préfère la version douce ? Choisis **☕ Pause café** dans le menu *Fin des agents* (ou `?fin=cafe`) : les agents terminés restent au canapé.
+S'il est rappelé avant le tir, il est épargné. Préfère la version douce ? Menu **Fin des agents → ☕ Pause café** (ou `?fin=cafe`).
 
-## Démarrage (30 secondes)
+## 🔒 Sécurité et confidentialité
 
-Prérequis : [Node.js](https://nodejs.org) 18 ou plus récent.
+La chambre voit passer tes prompts, tes commandes et tes chemins de fichiers. Elle est conçue pour que ça reste chez toi :
 
-```bash
-git clone https://github.com/MehenniIslam/claude-agent-room.git
-cd claude-agent-room
-npm install
-npm start
-```
+- **100 % local** : le serveur écoute uniquement `127.0.0.1`, ne contacte aucun service externe (polices embarquées, pas de CDN, pas de télémétrie).
+- **Les autres sites sont bloqués** : une page web ouverte dans ton navigateur ne peut ni lire la chambre (WebSocket), ni y écrire (CSRF), ni la détourner par DNS rebinding.
+- **Secrets masqués** : clés API (Anthropic, OpenAI, AWS, Google, Stripe…), tokens GitHub/GitLab/Slack/npm, JWT, clés privées, mots de passe dans une URL ou en `password=…` deviennent `[MASQUÉ]` avant même de quitter le hook.
+- **Réseau = jeton obligatoire** : si tu exposes la chambre (`--host 0.0.0.0`), un jeton est exigé et généré automatiquement.
+- **CSP stricte**, anti-iframe, entrées filtrées et limitées en taille et en débit.
 
-Ouvre **http://localhost:3030** puis clique sur **▶ Lancer Simulation Démo** (ou `curl -X POST http://localhost:3030/api/demo`).
-La démo rejoue une mission complète (OAuth GitHub) avec 5 sous-agents, un test en échec, une correction et les rapports finaux. Aucun token consommé.
+Détails, modèle de menace et signalement de faille : [SECURITY.md](SECURITY.md).
 
-> Pas de serveur ? Ouvre directement `public/index.html` : l'interface passe en **🟠 Mode Démo** et lance la simulation localement.
+## ⚙️ Configuration
 
-## Brancher Claude Code en direct
+| Option CLI | Variable | Défaut | Rôle |
+|---|---|---|---|
+| `--port <n>` | `PORT` ou `AGENT_ROOM_PORT` | `3030` | Port du serveur (le hook lit `AGENT_ROOM_PORT`) |
+| `--host <ip>` | `HOST` | `127.0.0.1` | Interface d'écoute. `0.0.0.0` = réseau local, jeton exigé |
+| `--open` | | | Ouvre le navigateur au démarrage |
+| | `AGENT_ROOM_TOKEN` | *(aucun en local)* | Jeton exigé par l'API et le WebSocket ; à définir aussi côté hook |
+| | `AGENT_ROOM_ALLOWED_HOSTS` | | Noms d'hôte supplémentaires acceptés, séparés par des virgules |
+| | `AGENT_ROOM_URL` | `http://127.0.0.1:3030/api/event` | Cible du hook |
+| | `AGENT_ROOM_TIMEOUT` | `700` | Délai max du hook (ms) |
+| | `AGENT_ROOM_DISABLED` | | `1` coupe le hook sans le désinstaller |
 
-```bash
-npm start                      # 1. le serveur doit tourner
-npm run hooks:install          # 2. ajoute les hooks dans ~/.claude/settings.json
-# ou, pour un seul projet :
-cd mon-projet && node /chemin/vers/claude-agent-room/bridge/setup-hooks.js --project
-```
+Toutes les commandes : `npx github:MehenniIslam/claude-agent-room --help`.
 
-Relance Claude Code (tape `/hooks` pour vérifier), puis donne-lui une tâche qui utilise des sous-agents, par exemple :
-*« Utilise un sous-agent pour explorer le code d'authentification, puis un autre pour écrire les tests. »*
+## 🩺 Dépannage
 
-Le script d'installation :
-- sauvegarde ton `settings.json` (`settings.json.bak-<date>`) avant toute modification ;
-- conserve tes hooks existants et peut être relancé sans créer de doublons ;
-- se retire proprement avec `npm run hooks:remove` (ajoute `--project` si tu l'as installé par projet) ;
-- s'essaie à blanc avec `node bridge/setup-hooks.js --dry-run`.
+<details>
+<summary><b>La chambre reste vide quand j'utilise Claude Code</b></summary>
 
-Configuration ajoutée (équivalent manuel) :
+1. Lance `npx github:MehenniIslam/claude-agent-room doctor` : il indique ce qui manque.
+2. Vérifie que la chambre tourne **avant** de donner la tâche à Claude.
+3. Relance Claude Code après l'installation des hooks (ils sont lus au démarrage), puis `/hooks` pour les voir.
+4. Si tu as changé de port, définis `AGENT_ROOM_PORT` dans l'environnement de Claude Code aussi.
+</details>
 
-```json
-{
-  "hooks": {
-    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }],
-    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }],
-    "SubagentStart":    [{ "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }],
-    "SubagentStop":     [{ "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "node \"/chemin/claude-agent-room/bridge/claude-hook.js\"", "timeout": 5 }] }]
-  }
-}
-```
+<details>
+<summary><b>« Le port 3030 est déjà utilisé »</b></summary>
 
-Si ta version de Claude Code ne connaît pas `SubagentStart`, retire simplement cette entrée : la chambre fonctionne sans.
+Si c'est déjà la chambre, le CLI le détecte et te donne simplement l'URL. Sinon, choisis un autre port : `--port 3031`, et `AGENT_ROOM_PORT=3031` pour le hook.
+</details>
 
-### Comment le pont fonctionne
+<details>
+<summary><b>Le badge affiche « Jeton requis »</b></summary>
 
-`bridge/claude-hook.js` lit le JSON que Claude Code écrit sur stdin et le transmet tel quel à `POST /api/event`. Le serveur (`server/normalize.js`) le traduit :
+Le serveur a été lancé avec un jeton (ou sur le réseau). Ouvre l'URL complète affichée dans le terminal, celle qui se termine par `?token=…`.
+</details>
 
-| Payload Claude Code | Événement chambre |
-|---|---|
-| `PreToolUse` sur `Task` / `Agent` | `SUBAGENT_SPAWN` (nom tiré de `subagent_type` ou `description`, rôle déduit) |
-| `PreToolUse` autre outil | `TOOL_START` (fichier, commande ou requête résumés) |
-| `PostToolUse` | `TOOL_END` (+ `ERROR` si échec) |
-| `PostToolUse` sur `Task` / `Agent`, ou `SubagentStop` | `SUBAGENT_COMPLETE` avec le début du rapport |
-| `UserPromptSubmit` | Claude annonce la nouvelle demande |
+<details>
+<summary><b>« node » n'est pas reconnu / version trop ancienne</b></summary>
 
-Garanties : le hook ne bloque jamais Claude (délai max 700 ms, aucune sortie, code 0 même serveur éteint) et tronque les réponses volumineuses.
+Installe Node.js LTS depuis [nodejs.org](https://nodejs.org) (sous Windows : `winget install OpenJS.NodeJS.LTS`), puis ouvre un **nouveau** terminal.
+</details>
 
-**Attribution des outils** : Claude Code n'indique pas toujours quel sous-agent appelle un outil. Le serveur utilise `agent_id` quand il est présent, sinon le dernier sous-agent encore actif, sinon Claude. Avec plusieurs sous-agents en parallèle, l'attribution peut donc être approximative.
+<details>
+<summary><b>Plusieurs sous-agents en parallèle : un outil est attribué au mauvais agent</b></summary>
 
-### Alternative sans hooks : suivre un transcript
+Claude Code n'indique pas toujours quel sous-agent appelle un outil. Le serveur utilise `agent_id` quand il est présent, sinon le dernier sous-agent actif, sinon Claude. Avec des sous-agents en parallèle, l'attribution peut être approximative. Le plugin (option 1) n'a pas cette limite.
+</details>
+
+<details>
+<summary><b>Désinstaller complètement</b></summary>
 
 ```bash
-npm run watch:transcript                                 # le transcript le plus récent de ~/.claude/projects
-node bridge/claude-hook.js --jsonl ~/.claude/projects/   # tout un dossier (sous-agents inclus)
+npx github:MehenniIslam/claude-agent-room hooks remove
 ```
 
-Seules les nouvelles lignes sont rejouées.
+Puis supprime le dossier `~/.claude/agent-room/`. Pour le plugin : `/plugin uninstall agent-room`.
+</details>
 
-## Protocole d'événements
+## 📡 Protocole d'événements
 
-`POST http://localhost:3030/api/event` (un objet ou un tableau) :
-
-```json
-{
-  "timestamp": 1730000000000,
-  "type": "SUBAGENT_SPAWN | TOOL_START | AGENT_MESSAGE | SUBAGENT_COMPLETE | ERROR",
-  "agentId": "subagent-1",
-  "parentId": "claude-main",
-  "role": "Coder | Researcher | Architect | Tester",
-  "name": "Agent-Front",
-  "tool": "Read | Edit | Bash | Grep | Task",
-  "message": "Je vérifie le composant d'authentification dans src/auth.ts...",
-  "targetAgentId": "claude-main"
-}
-```
-
-Champs facultatifs supplémentaires :
-
-| Champ | Utilisé par | Effet |
-|---|---|---|
-| `prompt` | `SUBAGENT_SPAWN` | Prompt complet affiché dans la fiche de l'agent |
-| `file` | `TOOL_START` | Ajouté aux « fichiers touchés » (les chemins dans `message` sont aussi détectés) |
-| `type: "TOOL_END"` + `success` | fin d'outil | Voyant vert / rouge sur le banc de test |
-
-Rôles reconnus (accessoire et couleur dédiés) : `Coder`, `Researcher`, `Architect`, `Tester`, `Reviewer`, `Debugger`. L'orchestrateur a l'identifiant `claude-main`.
-
-Exemple :
+Tu peux piloter la chambre depuis n'importe quel script (Anthropic SDK, serveur MCP, CI…) :
 
 ```bash
 curl -X POST localhost:3030/api/event -H 'content-type: application/json' -d '{
@@ -181,55 +257,85 @@ curl -X POST localhost:3030/api/event -H 'content-type: application/json' -d '{
   "type":"SUBAGENT_COMPLETE","agentId":"sub-1","message":"12 routes trouvées."}'
 ```
 
-Depuis un script Python ou TypeScript (Anthropic SDK, serveur MCP…), il suffit d'envoyer ces mêmes objets en POST, ou directement par WebSocket sur `ws://localhost:3030/ws`.
+<details>
+<summary><b>Format complet et routes</b></summary>
 
-### Autres routes
+`POST /api/event` accepte un objet ou un tableau (200 max), ou directement un payload brut de hook Claude Code :
+
+```json
+{
+  "type": "SUBAGENT_SPAWN | TOOL_START | TOOL_END | AGENT_MESSAGE | SUBAGENT_COMPLETE | ERROR | RESET",
+  "agentId": "subagent-1",
+  "parentId": "claude-main",
+  "role": "Coder | Researcher | Architect | Tester | Reviewer | Debugger",
+  "name": "Agent-Front",
+  "tool": "Read | Edit | Bash | Grep | Task",
+  "message": "Je vérifie le composant d'authentification dans src/auth.ts...",
+  "targetAgentId": "claude-main",
+  "prompt": "Prompt complet affiché dans la fiche (SUBAGENT_SPAWN)",
+  "file": "src/auth.ts",
+  "success": true
+}
+```
+
+Seuls ces champs sont conservés (les autres sont ignorés) ; les textes sont tronqués et leurs secrets masqués. L'orchestrateur a l'identifiant `claude-main`.
 
 | Route | Rôle |
 |---|---|
+| `POST /api/event` | Envoie un ou plusieurs événements |
 | `POST /api/demo?speed=2` | Lance la démo (vitesse 0.25 à 4) |
 | `POST /api/reset` | Vide la chambre |
-| `GET /api/state` | Historique récent (400 événements) et nombre de clients |
-| `GET /api/health` | Vérification simple |
-| `WS /ws` | Flux temps réel ; à la connexion, l'historique est rejoué instantanément |
+| `GET /api/state` | Historique récent (400 événements) et statistiques |
+| `GET /api/health` | Vérification simple, sans données |
+| `WS /ws` | Flux temps réel ; l'historique est rejoué à la connexion. On peut aussi y envoyer des événements |
 
-## Ce que tu vois
+Avec un jeton : en-tête `x-agent-room-token: <jeton>` (ou `Authorization: Bearer <jeton>`), et `?token=<jeton>` pour le WebSocket. Les requêtes venant d'un navigateur doivent provenir de la page de la chambre.
 
-- **Spawn** : rayon lumineux près du bureau, Claude annonce « Je crée X pour : … », l'agent répond « Bien reçu chef, je m'en occupe ! ».
-- **Déplacements** : pathfinding A* sur grille avec lissage, marche rebondissante et poussière.
-- **Postes** : écrans qui s'allument et particules de code à l'îlot, schémas qui se dessinent au tableau, livres tirés des étagères, voyants orange / vert / rouge au banc de test.
-- **Bulles** : effet machine à écrire, 4 s de lecture, empilement sans chevauchement, bulles rouges pour les erreurs.
-- **Fin de mission** : l'agent apporte un dossier à Claude (animation), lit son rapport, puis part au canapé, où les agents au repos discutent entre eux… jusqu'à leur retraite à la pompe (ou pas, en mode pause café).
-- **HUD** : statut WebSocket, compteurs, arbre hiérarchique en direct, journal horodaté, fiche détaillée au clic (prompt initial, fichiers touchés, historique).
+Dans la console du navigateur, `roomDebug.emit({...})` injecte un événement localement.
+</details>
 
-## Structure
+<details>
+<summary><b>Comment le pont traduit Claude Code</b></summary>
+
+| Payload Claude Code | Événement chambre |
+|---|---|
+| `PreToolUse` sur `Task` / `Agent` | `SUBAGENT_SPAWN` (nom tiré de `subagent_type` ou `description`, rôle déduit) |
+| `PreToolUse` autre outil | `TOOL_START` (fichier, commande ou requête résumés) |
+| `PostToolUse` | `TOOL_END` (+ `ERROR` si échec) |
+| `PostToolUse` sur `Task` / `Agent`, ou `SubagentStop` | `SUBAGENT_COMPLETE` avec le début du rapport |
+| `UserPromptSubmit` | Claude annonce la nouvelle demande |
+</details>
+
+## 🧱 Architecture
+
+```mermaid
+flowchart LR
+  CC["Claude Code"] -- "hooks (stdin JSON)" --> H["claude-hook.js<br/>masque les secrets"]
+  H -- "POST /api/event" --> S["Serveur local<br/>Express + ws<br/>127.0.0.1:3030"]
+  S -- "WebSocket /ws" --> B["Navigateur<br/>chambre pixel art"]
+  X["Tes scripts"] -. "POST / WS" .-> S
+  CC -. "plugin (sans serveur)" .-> P["Panneau Agent Room"]
+```
 
 ```
 claude-agent-room/
-├── .claude-plugin/
-│   └── marketplace.json  # rend le dépôt installable avec /plugin install
-├── plugin/agent-room/    # le plugin Claude : panneau SVG, suivi des agents et des fichiers
-│   ├── hooks/register.tsx
-│   ├── hooks/scene.ts    # la chambre en SVG animé (4 mondes, retraite à la pompe)
-│   └── tests/room.test.tsx
-├── package.json
+├── bin/cli.js               # point d'entrée : start, hooks, demo, watch, doctor
 ├── server/
-│   ├── index.js          # Express + ws : /api/event, /api/demo, /ws
-│   └── normalize.js      # payloads Hooks Claude Code → événements chambre
+│   ├── index.js             # Express + ws : API, démo, diffusion temps réel
+│   ├── security.js          # hôte, origine, jeton, débit, en-têtes
+│   └── normalize.js         # payloads Hooks Claude Code → événements chambre
 ├── bridge/
-│   ├── claude-hook.js    # hook stdin → POST (et mode --jsonl)
-│   └── setup-hooks.js    # installe / retire les hooks
-└── public/
-    ├── index.html        # HUD
-    ├── style.css
-    ├── app.js            # moteur pixel art, monde Studio, animations, bulles, client WebSocket
-    ├── worlds.js         # mondes Opéra, Jardin, Salle de classe
-    └── demo-scenario.js  # scénario partagé serveur / navigateur
+│   ├── claude-hook.js       # hook stdin → POST (+ masquage, + mode --jsonl)
+│   └── setup-hooks.js       # installe / retire les hooks
+├── public/                  # page web : moteur pixel art, 4 mondes, HUD, polices
+├── plugin/agent-room/       # plugin Claude Code : panneau SVG, suivi des fichiers
+├── .claude-plugin/          # marketplace (rend le dépôt installable avec /plugin)
+└── test/                    # tests : npm test
 ```
 
-## Ajouter ton propre monde
+## 🎨 Ajouter ton propre monde
 
-Tous les mondes partagent la même disposition (postes, obstacles, chemins). Un monde ne fait que redessiner le décor par-dessus. Pour en créer un, ajoute une fonction dans `public/worlds.js` et enregistre-la dans `ROOM_WORLDS` :
+Tous les mondes partagent la même disposition (postes, obstacles, chemins) ; un monde ne fait que redessiner le décor. Ajoute une fonction dans `public/worlds.js` et enregistre-la dans `ROOM_WORLDS` :
 
 ```js
 function spaceship(api) {
@@ -250,15 +356,16 @@ root.ROOM_WORLDS = { opera, garden, classroom, spaceship };
 
 Les emplacements à respecter sont listés en tête de `worlds.js`. L'objet `api` donne aussi l'état de la chambre : `codeUser(i)`, `readers()`, `benchRunning()`, `mainActive()`, `deskPile()`, etc.
 
-## Réglages
+## 🤝 Contribuer
 
-| Variable | Défaut | Rôle |
-|---|---|---|
-| `PORT` | `3030` | Port du serveur |
-| `HOST` | `127.0.0.1` | Interface d'écoute (`0.0.0.0` pour l'exposer sur le réseau local) |
-| `AGENT_ROOM_URL` | `http://localhost:3030/api/event` | Cible du hook |
-| `AGENT_ROOM_TIMEOUT` | `700` | Délai max du hook (ms) |
+```bash
+npm install
+npm run dev      # serveur relancé à chaque modification
+npm test         # tests du serveur, du masquage et des hooks
+```
 
-Dans la console du navigateur, `roomDebug.emit({...})` injecte un événement localement.
+Les contributions sont bienvenues : un nouveau monde, un rôle d'agent, une traduction… Ouvre une issue pour en discuter, ou directement une pull request. Les failles de sécurité se signalent en privé (voir [SECURITY.md](SECURITY.md)). Historique des versions : [CHANGELOG.md](CHANGELOG.md).
 
-Licence [MIT](LICENSE).
+## 📄 Licence
+
+[MIT](LICENSE). Polices embarquées : [Pixelify Sans](public/fonts/OFL-PixelifySans.txt) et [JetBrains Mono](public/fonts/OFL-JetBrainsMono.txt), sous licence SIL Open Font License 1.1.

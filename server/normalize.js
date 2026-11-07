@@ -29,11 +29,14 @@ function inferRole(text) {
   return 'Coder';
 }
 
+const STOP_WORDS = new Set(['le', 'la', 'les', 'l', 'du', 'de', 'des', 'd', 'un', 'une', 'et', 'en', 'au', 'aux', 'pour', 'the', 'a', 'an', 'of', 'to', 'for', 'and']);
+
 function prettyName(input) {
-  const base = input.subagent_type && input.subagent_type !== 'general-purpose'
+  const base = input.subagent_type && !['general-purpose', 'fork', 'teammate'].includes(input.subagent_type)
     ? input.subagent_type
     : (input.description || 'Agent');
-  const words = String(base).replace(/[^\p{L}\p{N} _-]/gu, ' ').trim().split(/[\s_-]+/).slice(0, 2);
+  const words = String(base).replace(/[^\p{L}\p{N} _-]/gu, ' ').trim().split(/[\s_-]+/)
+    .filter(w => w && !STOP_WORDS.has(w.toLowerCase())).slice(0, 2);
   const name = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-') || 'Agent';
   return short(name, 18);
 }

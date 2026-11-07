@@ -1,20 +1,33 @@
 {
   "name": "claude-agent-room",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Visualiseur temps réel d'un agent Claude orchestrateur et de ses sous-agents dans une chambre en pixel art.",
   "main": "server/index.js",
   "bin": {
-    "claude-agent-room": "server/index.js",
+    "claude-agent-room": "bin/cli.js",
     "claude-agent-room-hook": "bridge/claude-hook.js"
   },
+  "files": [
+    "bin/",
+    "bridge/",
+    "server/",
+    "public/",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node bin/cli.js start",
+    "open": "node bin/cli.js start --open",
     "dev": "node --watch server/index.js",
-    "demo": "node -e \"fetch('http://localhost:3030/api/demo',{method:'POST'}).then(r=>r.json()).then(console.log)\"",
-    "hooks:install": "node bridge/setup-hooks.js",
-    "hooks:install:project": "node bridge/setup-hooks.js --project",
-    "hooks:remove": "node bridge/setup-hooks.js --remove",
-    "watch:transcript": "node bridge/claude-hook.js --jsonl"
+    "demo": "node bin/cli.js demo",
+    "doctor": "node bin/cli.js doctor",
+    "hooks:install": "node bin/cli.js hooks install",
+    "hooks:install:project": "node bin/cli.js hooks install --project",
+    "hooks:remove": "node bin/cli.js hooks remove",
+    "hooks:status": "node bin/cli.js hooks status",
+    "watch:transcript": "node bin/cli.js watch",
+    "test": "node --test test/"
   },
   "keywords": [
     "claude",
@@ -27,15 +40,18 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=18.17"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "ws": "^8.18.0"
+    "express": "^5.3.0",
+    "ws": "^8.22.1"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MehenniIslam/claude-agent-room.git"
+    "url": "git+https://github.com/MehenniIslam/claude-agent-room.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MehenniIslam/claude-agent-room/issues"
   },
   "homepage": "https://github.com/MehenniIslam/claude-agent-room#readme",
   "author": "MehenniIslam"

@@ -1,3 +1,9 @@
 node_modules/
 *.log
+*.tgz
 .DS_Store
+Thumbs.db
+.env
+.env.*
+.claude/settings.local.json
+coverage/

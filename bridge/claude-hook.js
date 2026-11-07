@@ -12,22 +12,73 @@
  * Mode JSONL : node bridge/claude-hook.js --jsonl [fichier|dossier]
  * suit un transcript Claude Code (~/.claude/projects/...) et rejoue
  * les appels d'outils en direct, sans configurer de hooks.
+ *
+ * Confidentialité : avant tout envoi, les secrets reconnaissables (clés API,
+ * tokens GitHub/Slack/AWS/Stripe, JWT, clés privées, identifiants dans une URL,
+ * `password=...`) sont remplacés par [MASQUÉ].
+ *
+ * Ce fichier n'utilise que les modules intégrés de Node : setup-hooks.js le
+ * copie tel quel dans ~/.claude/agent-room/ pour que le hook continue de
+ * marcher si le dépôt est déplacé ou supprimé.
+ *
+ * Variables : AGENT_ROOM_URL, AGENT_ROOM_PORT, AGENT_ROOM_TOKEN,
+ * AGENT_ROOM_TIMEOUT (ms), AGENT_ROOM_DISABLED=1 (coupe le hook).
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const ENDPOINT = process.env.AGENT_ROOM_URL || `http://localhost:${process.env.AGENT_ROOM_PORT || 3030}/api/event`;
+const ENDPOINT = process.env.AGENT_ROOM_URL || `http://127.0.0.1:${process.env.AGENT_ROOM_PORT || 3030}/api/event`;
 const TIMEOUT_MS = Number(process.env.AGENT_ROOM_TIMEOUT || 700);
+const TOKEN = process.env.AGENT_ROOM_TOKEN || '';
+
+/* ---------------------------- Masquage des secrets ---------------------------- */
+
+const MASK = '[MASQUÉ]';
+const SECRET_PATTERNS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, MASK],
+  [/\bsk-ant-[A-Za-z0-9_-]{8,}/g, MASK],
+  [/\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{20,}/g, MASK],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, MASK],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, MASK],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, MASK],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, MASK],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, MASK],
+  [/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}/g, MASK],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, MASK],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, MASK],
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi, `$1 ${MASK}`],
+  [/([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]+:[^\s@/]+@/gi, `$1${MASK}@`],
+  // KEY=valeur (env, CLI, query string), clé: "valeur" entre guillemets, CLE_MAJUSCULE: valeur (YAML / .env)
+  [/(\b\w*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\w*=)[^\s"'&,;]{4,}/gi, `$1${MASK}`],
+  [/(\b\w*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\w*["']?\s*[:=]\s*["'])[^"'\s]{4,}(?=["'])/gi, `$1${MASK}`],
+  [/^(\s*[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|ACCESS_KEY)[A-Z0-9_]*\s*:\s*)\S{4,}/gm, `$1${MASK}`]
+];
+
+/** Remplace les secrets reconnaissables dans une chaîne, un tableau ou un objet. */
+function redact(v, depth = 0) {
+  if (typeof v === 'string') {
+    let s = v;
+    for (const [re, rep] of SECRET_PATTERNS) s = s.replace(re, rep);
+    return s;
+  }
+  if (depth > 12 || v == null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return v.map(x => redact(x, depth + 1));
+  const o = {};
+  for (const [k, val] of Object.entries(v)) o[k] = redact(val, depth + 1);
+  return o;
+}
 
 async function post(body) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const headers = { 'content-type': 'application/json' };
+  if (TOKEN) headers['x-agent-room-token'] = TOKEN;
   try {
     await fetch(ENDPOINT, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      headers,
+      body: JSON.stringify(redact(body)),
       signal: ctrl.signal
     });
     return true;
@@ -170,7 +221,12 @@ async function jsonlMode(target) {
   setInterval(() => { tick().catch(() => {}); }, 400);
 }
 
-const args = process.argv.slice(2);
-const j = args.indexOf('--jsonl');
-if (j >= 0) jsonlMode(args[j + 1]);
-else hookMode().finally(() => process.exit(0));
+module.exports = { redact, trimDeep };
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const j = args.indexOf('--jsonl');
+  if (process.env.AGENT_ROOM_DISABLED === '1') process.exit(0);
+  else if (j >= 0) jsonlMode(args[j + 1]);
+  else hookMode().finally(() => process.exit(0));
+}

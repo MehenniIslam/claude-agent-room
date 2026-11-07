@@ -314,6 +314,10 @@
   let execCooldown = 0;
   let shakeUntil = 0;
   const comicTexts = [];
+  const fileIndex = new Map();      // chemin -> { path, kind: 'w'|'e'|'r', count, agentId, t }
+  let filesDirty = true;
+  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FILE_KIND = { Write: 'w', NotebookEdit: 'e', Edit: 'e', MultiEdit: 'e' };
 
   function makeAgent(id, opts = {}) {
     const isMain = id === MAIN_ID;
@@ -505,8 +509,24 @@
   function record(agent, e, text) {
     agent.history.push({ t: e.timestamp || Date.now(), type: e.type, tool: e.tool || '', text: text || e.message || '' });
     if (agent.history.length > 200) agent.history.shift();
-    const files = new Set([e.file, ...extractFiles(e.message)].filter(Boolean));
+    // Les chemins repérés dans le message qui ne sont qu'un bout de e.file ne comptent pas en double.
+    const files = new Set([e.file, ...extractFiles(e.message).filter(f => !e.file || !String(e.file).endsWith(f))].filter(Boolean));
     files.forEach(f => agent.files.add(f));
+    if (e.type === 'TOOL_START') {
+      for (const f of files) {
+        if (/[\\/]$/.test(f)) continue; // dossier, pas un fichier
+        const kind = FILE_KIND[e.tool] || 'r';
+        const prev = fileIndex.get(f);
+        // Un fichier écrit ou modifié garde ce statut même s'il est relu ensuite.
+        const keep = prev && kind === 'r' && prev.kind !== 'r';
+        fileIndex.set(f, {
+          path: f, count: (prev ? prev.count : 0) + 1, t: e.timestamp || Date.now(),
+          kind: keep ? prev.kind : (prev && prev.kind === 'w' && kind === 'e' ? 'w' : kind),
+          agentId: keep ? prev.agentId : agent.id
+        });
+        filesDirty = true;
+      }
+    }
     if (selectedId === agent.id) renderInspector();
   }
 
@@ -516,6 +536,7 @@
     e.agentId = e.agentId || MAIN_ID;
     e.timestamp = e.timestamp || Date.now();
     counters.events++;
+    if (e.source === 'claude-code' && !claudeSeen) { claudeSeen = true; updateSource(); }
     const main = getMain();
 
     switch (e.type) {
@@ -674,6 +695,7 @@
     benchLamps.forEach(l => { l.state = 'idle'; l.until = 0; });
     counters.tools = 0; counters.events = 0;
     deskPile = 0; colorIndex = 1;
+    fileIndex.clear(); filesDirty = true;
     const main = getMain();
     main.bubbles = []; main.history = []; main.files.clear();
     if (selectedId && selectedId !== MAIN_ID) closeInspector();
@@ -1722,7 +1744,7 @@
 
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const shake = t < shakeUntil ? S * 2 : 0;
+    const shake = t < shakeUntil && !reducedMotion ? S * 2 : 0;
     ctx.drawImage(buf, shake ? Math.round(rnd(-1, 1)) * shake : 0, shake ? Math.round(rnd(-1, 1)) * shake : 0, W * S, H * S);
     drawOverlay(t);
 
@@ -1781,14 +1803,49 @@
     if (!subs.length) { const e = document.createElement('li'); e.className = 'empty'; e.textContent = 'Aucun sous-agent pour le moment.'; ul.appendChild(e); }
     root.appendChild(ul);
     tree.replaceChildren(root);
-    $('#empty-hint').classList.toggle('hidden', subs.length > 0 || main.bubbles.length > 0 || connection.demoRunning);
+    const calm = !subs.length && !main.bubbles.length && !connection.demoRunning;
+    $('#onboarding').classList.toggle('hidden', !calm || onboardingDismissed);
+    if (filesDirty) { filesDirty = false; renderFiles(); }
   }
 
+  const FILE_ICON = { w: ['✚', 'écrit'], e: ['✎', 'modifié'], r: ['◌', 'lu'] };
+  function renderFiles() {
+    const list = $('#file-list');
+    const items = [...fileIndex.values()].sort((a, b) => (a.kind === 'r') - (b.kind === 'r') || b.t - a.t).slice(0, 200);
+    $('#files-count').textContent = fileIndex.size;
+    if (!items.length) {
+      const li = document.createElement('li'); li.className = 'none';
+      li.textContent = 'Aucun fichier touché pour le moment.';
+      return list.replaceChildren(li);
+    }
+    list.replaceChildren(...items.map(f => {
+      const a = agents.get(f.agentId);
+      const li = document.createElement('li');
+      li.title = `${f.path} · ${FILE_ICON[f.kind][1]} ${f.count} fois`;
+      const act = document.createElement('span'); act.className = `act ${f.kind}`; act.textContent = FILE_ICON[f.kind][0];
+      const path = document.createElement('span'); path.className = 'path';
+      const bdi = document.createElement('bdi'); bdi.textContent = f.path; path.appendChild(bdi);
+      const by = document.createElement('span'); by.className = 'by';
+      const sw = document.createElement('i'); sw.style.background = a ? a.color : 'var(--muted)';
+      by.append(sw, a ? a.name : 'parti');
+      li.append(act, path, by);
+      if (a) li.addEventListener('click', () => openInspector(a.id));
+      return li;
+    }));
+  }
+
+  let lastCounts = [0, 0, 0];
   function updateCounters() {
     const active = [...agents.values()].filter(a => a.id !== MAIN_ID && !a.done && !a.gone && !a.dying).length;
-    $('#c-agents').textContent = active;
-    $('#c-tools').textContent = counters.tools;
-    $('#c-events').textContent = counters.events;
+    const values = [active, counters.tools, counters.events];
+    ['#c-agents', '#c-tools', '#c-events'].forEach((sel, i) => {
+      const el = $(sel);
+      el.textContent = values[i];
+      if (values[i] > lastCounts[i] && !replaying && !reducedMotion) {
+        el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+      }
+    });
+    lastCounts = values;
   }
 
   const logEl = $('#log');
@@ -1799,6 +1856,8 @@
     const stick = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
     const li = document.createElement('li');
     if (entry.kind === 'ERR') li.className = 'err';
+    li.dataset.kind = entry.kind;
+    li.hidden = !matchesFilter(entry.kind);
     const time = document.createElement('time'); time.textContent = fmtTime(entry.t);
     const body = document.createElement('div');
     const who = document.createElement('span'); who.className = 'who'; who.style.color = entry.color; who.textContent = entry.who;
@@ -1818,6 +1877,42 @@
     if (stick) logEl.scrollTop = logEl.scrollHeight;
   }
   $('#btn-clear-log').addEventListener('click', () => logEl.replaceChildren());
+
+  // Filtres du journal : chaque filtre regroupe plusieurs types d'entrées.
+  const FILTER_KINDS = { all: null, TOOL: ['TOOL', 'OK'], MSG: ['MSG', 'SPAWN', 'DONE'], ERR: ['ERR'] };
+  let logFilter = 'all';
+  function matchesFilter(kind) { const k = FILTER_KINDS[logFilter]; return !k || k.includes(kind); }
+  document.querySelectorAll('.filter').forEach(btn => btn.addEventListener('click', () => {
+    logFilter = btn.dataset.filter;
+    document.querySelectorAll('.filter').forEach(b => b.classList.toggle('active', b === btn));
+    for (const li of logEl.children) li.hidden = !matchesFilter(li.dataset.kind);
+    logEl.scrollTop = logEl.scrollHeight;
+  }));
+
+  // Onglets Journal / Fichiers
+  function selectTab(name) {
+    for (const t of ['log', 'files']) {
+      const on = t === name;
+      $(`#tab-${t}`).classList.toggle('active', on);
+      $(`#tab-${t}`).setAttribute('aria-selected', String(on));
+      $(`#pane-${t}`).classList.toggle('hidden', !on);
+    }
+    $('#btn-clear-log').classList.toggle('hidden', name !== 'log');
+    if (name === 'files') renderFiles();
+  }
+  $('#tab-log').addEventListener('click', () => selectTab('log'));
+  $('#tab-files').addEventListener('click', () => selectTab('files'));
+
+  // Notifications
+  function toast(text, kind = '') {
+    const box = $('#toasts');
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.textContent = text;
+    box.appendChild(el);
+    while (box.children.length > 3) box.firstChild.remove();
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, 3200);
+  }
 
   function openInspector(id) {
     selectedId = id;
@@ -1889,22 +1984,52 @@
    * ================================================================ */
   const connection = { ws: null, live: false, retry: 0, demoRunning: false, demoTimers: [] };
   const statusEl = $('#status');
+  let claudeSeen = false;
+  let onboardingDismissed = false;
+
+  // Jeton (serveur exposé sur le réseau) : lu une fois dans l'URL, gardé pour l'onglet, retiré de la barre d'adresse.
+  const token = (() => {
+    let t = '';
+    try {
+      const url = new URL(location.href);
+      t = url.searchParams.get('token') || sessionStorage.getItem('agent-room:token') || '';
+      if (url.searchParams.has('token')) {
+        sessionStorage.setItem('agent-room:token', t);
+        url.searchParams.delete('token');
+        history.replaceState(null, '', url);
+      }
+    } catch { /* file:// ou stockage indisponible */ }
+    return t;
+  })();
+  const authHeaders = extra => (token ? { ...extra, 'x-agent-room-token': token } : { ...extra });
+  const api = (path, opts = {}) => fetch(path, { ...opts, headers: authHeaders(opts.headers) });
+
   function setStatus(kind) {
     statusEl.className = `status status--${kind}`;
     statusEl.querySelector('.label').textContent =
-      kind === 'live' ? '🟢 Connecté en direct' : kind === 'demo' ? '🟠 Mode Démo' : 'Connexion…';
+      kind === 'live' ? 'En direct' : kind === 'demo' ? 'Mode démo' : kind === 'auth' ? 'Jeton requis' : 'Connexion…';
+    statusEl.title = kind === 'auth'
+      ? 'Le serveur exige un jeton : ouvre l\'URL affichée dans le terminal (…/?token=…)'
+      : kind === 'demo' ? 'Serveur injoignable : la chambre rejoue la démo localement' : 'Connecté au serveur';
+    updateSource();
+  }
+  function updateSource() {
+    $('#status-source').textContent = !connection.live ? '' : claudeSeen ? 'Claude Code branché' : 'en attente de Claude';
   }
 
   function connect() {
     if (location.protocol === 'file:') { setStatus('demo'); return; }
     let ws;
-    try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`); }
+    const q = token ? `?token=${encodeURIComponent(token)}` : '';
+    try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws${q}`); }
     catch { setStatus('demo'); return; }
     connection.ws = ws;
     ws.onopen = () => {
+      const wasRetry = connection.retry > 0;
       connection.live = true; connection.retry = 0;
       stopLocalDemo();
       setStatus('live');
+      if (wasRetry) toast('Reconnecté au serveur.', 'ok');
     };
     ws.onmessage = msg => {
       let data;
@@ -1912,10 +2037,16 @@
       if (data.kind === 'hello') replayHistory(data.history || []);
       else if (data.kind === 'event') handleEvent(data.event);
     };
-    ws.onclose = () => {
+    ws.onclose = async () => {
+      const wasLive = connection.live;
       connection.live = false;
-      setStatus('demo');
-      const delay = Math.min(5000, 800 * 2 ** connection.retry++);
+      // Refus d'authentification ? /api/health indique si un jeton est exigé.
+      let needsAuth = false;
+      try { const h = await (await fetch('/api/health')).json(); needsAuth = h.auth && !wasLive; } catch { /* serveur arrêté */ }
+      setStatus(needsAuth ? 'auth' : 'demo');
+      if (wasLive) toast('Connexion perdue, nouvel essai…', 'err');
+      if (needsAuth && connection.retry === 0) toast('Ce serveur exige un jeton : ouvre l\'URL avec ?token=… affichée dans le terminal.', 'err');
+      const delay = Math.min(needsAuth ? 15000 : 5000, 800 * 2 ** connection.retry++);
       setTimeout(connect, delay);
     };
     ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
@@ -1937,7 +2068,7 @@
   async function send(ev) {
     if (connection.live) {
       try {
-        const r = await fetch('/api/event', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ev) });
+        const r = await api('/api/event', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ev) });
         if (r.ok) return;
       } catch { /* bascule en local */ }
     }
@@ -1958,12 +2089,15 @@
     connection.demoTimers.push(setTimeout(() => { connection.demoRunning = false; treeDirty = true; }, sc.durationMs));
   }
 
-  $('#btn-demo').addEventListener('click', async () => {
+  async function startDemo() {
     if (connection.live) {
-      try { const r = await fetch('/api/demo', { method: 'POST' }); if (r.ok) return; } catch { /* local */ }
+      try { const r = await api('/api/demo', { method: 'POST' }); if (r.ok) return; } catch { /* local */ }
     }
     runLocalDemo();
-  });
+  }
+  $('#btn-demo').addEventListener('click', startDemo);
+  $('#onb-demo').addEventListener('click', startDemo);
+  $('#onb-close').addEventListener('click', () => { onboardingDismissed = true; $('#onboarding').classList.add('hidden'); });
 
   let testCount = 0;
   const TEST_AGENTS = [
@@ -1974,7 +2108,7 @@
     { role: 'Reviewer', name: 'Lynx', task: 'relire la PR #42', tools: [['Grep', 'TODO|FIXME'], ['Read', 'src/api/routes.ts']] },
     { role: 'Debugger', name: 'Patch', task: 'traquer la fuite mémoire du worker', tools: [['Bash', 'node --inspect worker.js'], ['Edit', 'src/worker.ts']] }
   ];
-  $('#btn-spawn').addEventListener('click', () => {
+  function spawnTestAgent() {
     const base = TEST_AGENTS[testCount % TEST_AGENTS.length];
     const id = `test-${Date.now().toString(36)}`;
     const name = `${base.name}${testCount >= TEST_AGENTS.length ? '-' + (Math.floor(testCount / TEST_AGENTS.length) + 1) : ''}`;
@@ -1987,12 +2121,59 @@
       if (tool === 'Bash') setTimeout(() => send({ type: 'TOOL_END', agentId: id, tool, success: Math.random() > 0.3, message: 'commande terminée' }), at - 1200);
     });
     setTimeout(() => send({ type: 'SUBAGENT_COMPLETE', agentId: id, message: `Fini : ${base.task}.` }), at + 1500);
-  });
+  }
+  $('#btn-spawn').addEventListener('click', spawnTestAgent);
 
-  $('#btn-reset').addEventListener('click', async () => {
+  async function resetAll() {
     stopLocalDemo();
-    if (connection.live) { try { await fetch('/api/reset', { method: 'POST' }); return; } catch { /* local */ } }
+    if (connection.live) { try { const r = await api('/api/reset', { method: 'POST' }); if (r.ok) return; } catch { /* local */ } }
     resetRoom(true);
+  }
+  $('#btn-reset').addEventListener('click', resetAll);
+
+  /* ================================================================
+   * Plein écran, aide, copie, raccourcis clavier
+   * ================================================================ */
+  function toggleFullscreen() {
+    const stage = $('#stage');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else if (stage.requestFullscreen) stage.requestFullscreen().catch(() => toast('Plein écran indisponible ici.', 'err'));
+  }
+  document.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
+  $('#btn-fullscreen').addEventListener('click', toggleFullscreen);
+
+  const helpEl = $('#help');
+  const openHelp = () => { if (helpEl.showModal && !helpEl.open) helpEl.showModal(); };
+  $('#btn-help').addEventListener('click', openHelp);
+  $('#help-close').addEventListener('click', () => helpEl.close());
+  helpEl.addEventListener('click', e => { if (e.target === helpEl) helpEl.close(); });
+
+  document.querySelectorAll('[data-copy]').forEach(btn => btn.addEventListener('click', async () => {
+    const text = $(btn.dataset.copy).textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copié ✓'; btn.classList.add('done');
+      setTimeout(() => { btn.textContent = 'Copier'; btn.classList.remove('done'); }, 1600);
+    } catch { toast('Copie impossible : sélectionne la commande à la main.', 'err'); }
+  }));
+
+  window.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const el = e.target instanceof Element ? e.target : null;
+    if ((el && el.closest('input, select, textarea, [contenteditable]')) || helpEl.open) return;
+    const k = e.key.toLowerCase();
+    if (k === 'd') startDemo();
+    else if (k === 's') spawnTestAgent();
+    else if (k === 'r') resetAll();
+    else if (k === 'f') toggleFullscreen();
+    else if (k === '?' || k === 'h') openHelp();
+    else if (k === 'w') {
+      const ws = $('#world-select');
+      ws.selectedIndex = (ws.selectedIndex + 1) % ws.options.length;
+      ws.dispatchEvent(new Event('change'));
+      toast(`Monde : ${ws.options[ws.selectedIndex].textContent}`);
+    } else return;
+    e.preventDefault();
   });
 
   /* ================================================================
