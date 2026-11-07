@@ -89,38 +89,74 @@ async function post(body) {
   }
 }
 
+const STDIN_MAX = 16 * 1024 * 1024;   // au-delà, on garde juste de quoi identifier l'événement
+const PAYLOAD_MAX = 200 * 1024;        // le serveur refuse au-dessus de 512 ko : large marge
+
 function readStdin() {
   return new Promise(resolve => {
-    if (process.stdin.isTTY) return resolve('');
+    if (process.stdin.isTTY) return resolve({ data: '', truncated: false });
     let data = '';
+    let truncated = false;
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', c => { data += c; });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', () => resolve(data));
-    setTimeout(() => resolve(data), 1500);
+    process.stdin.on('data', c => {
+      if (data.length + c.length <= STDIN_MAX) data += c;
+      else truncated = true; // on continue de vider stdin sans le garder en mémoire
+    });
+    process.stdin.on('end', () => resolve({ data, truncated }));
+    process.stdin.on('error', () => resolve({ data, truncated }));
+    setTimeout(() => resolve({ data, truncated }), 1500);
   });
+}
+
+/** Réduit un payload de hook à ce dont la chambre a besoin, quelle que soit la taille du projet. */
+function shrinkPayload(payload) {
+  // Contenus de fichiers, diffs d'Edit/MultiEdit, sorties de commandes : tout est tronqué.
+  if (payload.tool_input) payload.tool_input = trimDeep(payload.tool_input, 2000);
+  if (payload.tool_input && payload.tool_input.content) payload.tool_input.content = String(payload.tool_input.content).slice(0, 300);
+  if (payload.tool_response) payload.tool_response = trimDeep(payload.tool_response, 1500);
+  for (const k of ['prompt', 'last_assistant_message', 'error']) {
+    if (typeof payload[k] === 'string') payload[k] = trimDeep(payload[k], 4000);
+  }
+  if (JSON.stringify(payload).length > PAYLOAD_MAX) {
+    payload.tool_response = trimDeep(payload.tool_response, 200);
+    payload.tool_input = trimDeep(payload.tool_input, 300);
+  }
+  return payload;
+}
+
+/** stdin illisible ou tronqué : on récupère au moins le type d'événement et l'outil. */
+function salvage(raw) {
+  const head = raw.slice(0, 8192);
+  const field = name => (new RegExp(`"${name}"\\s*:\\s*"([^"]{1,200})"`).exec(head) || [])[1];
+  const hook = field('hook_event_name');
+  if (!hook) return null;
+  return { hook_event_name: hook, tool_name: field('tool_name'), tool_use_id: field('tool_use_id'), session_id: field('session_id'), agent_id: field('agent_id'), tool_input: {} };
 }
 
 async function hookMode() {
   try {
-    const raw = await readStdin();
-    if (!raw.trim()) return;
-    const payload = JSON.parse(raw);
-    // Les réponses d'outils peuvent être énormes (contenu de fichiers) : on les tronque.
-    if (payload.tool_response) payload.tool_response = trimDeep(payload.tool_response, 1500);
-    if (payload.tool_input && payload.tool_input.content) payload.tool_input.content = String(payload.tool_input.content).slice(0, 300);
-    await post(payload);
+    const { data, truncated } = await readStdin();
+    if (!data.trim()) return;
+    let payload = null;
+    if (!truncated) { try { payload = JSON.parse(data); } catch { payload = null; } }
+    payload = payload ? shrinkPayload(payload) : salvage(data);
+    if (payload) await post(payload);
   } catch {
     /* jamais d'erreur visible dans Claude Code */
   }
 }
 
-function trimDeep(v, max) {
+function trimDeep(v, max, depth = 0) {
   if (typeof v === 'string') return v.length > max ? v.slice(0, max) + '…' : v;
-  if (Array.isArray(v)) return v.slice(0, 20).map(x => trimDeep(x, max));
+  if (depth > 8) return undefined;
+  if (Array.isArray(v)) return v.slice(0, 20).map(x => trimDeep(x, max, depth + 1));
   if (v && typeof v === 'object') {
     const o = {};
-    for (const [k, val] of Object.entries(v)) o[k] = trimDeep(val, max);
+    let n = 0;
+    for (const [k, val] of Object.entries(v)) {
+      if (++n > 50) break;
+      o[k] = trimDeep(val, max, depth + 1);
+    }
     return o;
   }
   return v;
@@ -147,20 +183,31 @@ function latestTranscript() {
   return best && best.p;
 }
 
-function listJsonl(target) {
+/** Liste les .jsonl d'un dossier ; `maxAgeMs` écarte les vieux transcripts (gros historiques). */
+function listJsonl(target, maxAgeMs = Infinity) {
   const st = fs.statSync(target);
   if (st.isFile()) return [target];
   const out = [];
-  const walk = dir => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+  const limit = Date.now() - maxAgeMs;
+  const walk = (dir, depth) => {
+    if (depth > 6) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.jsonl')) out.push(p);
+      if (e.isDirectory()) walk(p, depth + 1);
+      else if (e.name.endsWith('.jsonl')) {
+        try { if (fs.statSync(p).mtimeMs >= limit) out.push(p); } catch { /* supprimé entre-temps */ }
+      }
     }
   };
-  walk(target);
+  walk(target, 0);
   return out;
 }
+
+const CHUNK_MAX = 4 * 1024 * 1024;     // lecture par morceaux : jamais tout un transcript en mémoire
+const RESCAN_MS = 5000;                // nouvelle liste des fichiers toutes les 5 s, pas à chaque passage
+const RECENT_MS = 48 * 3600 * 1000;    // en mode dossier, seuls les transcripts des 48 dernières heures
 
 async function jsonlMode(target) {
   target = target || latestTranscript();
@@ -171,10 +218,19 @@ async function jsonlMode(target) {
   const isDir = fs.statSync(target).isDirectory();
   console.log(`👀 Suivi de ${target} → ${ENDPOINT}`);
   const offsets = new Map();
+  const skipping = new Set();          // fichiers dont la ligne en cours est trop grosse : on saute jusqu'au prochain \n
   const toolNames = new Map();
+  const send = body => post(shrinkPayload(body));
+  const rememberTool = (id, name) => {
+    toolNames.set(id, name);
+    if (toolNames.size > 5000) toolNames.delete(toolNames.keys().next().value);
+  };
 
   // On démarre à la fin des fichiers existants : seul le nouveau trafic est rejoué.
-  for (const f of listJsonl(target)) offsets.set(f, fs.statSync(f).size);
+  let files = isDir ? listJsonl(target, RECENT_MS) : [target];
+  for (const f of files) { try { offsets.set(f, fs.statSync(f).size); } catch { /* ignore */ } }
+  const startedAt = Date.now();
+  let lastScan = startedAt;
 
   const handleLine = async (line, file) => {
     let rec;
@@ -184,44 +240,75 @@ async function jsonlMode(target) {
     const agent_id = rec.isSidechain ? (rec.agentId || (agentFromFile && agentFromFile[1])) : undefined;
     for (const c of content) {
       if (c.type === 'tool_use') {
-        toolNames.set(c.id, c.name);
-        await post({ hook_event_name: 'PreToolUse', session_id: rec.sessionId, tool_name: c.name, tool_input: c.input, tool_use_id: c.id, agent_id });
+        rememberTool(c.id, c.name);
+        await send({ hook_event_name: 'PreToolUse', session_id: rec.sessionId, tool_name: c.name, tool_input: c.input, tool_use_id: c.id, agent_id });
       } else if (c.type === 'tool_result') {
         const name = toolNames.get(c.tool_use_id);
         if (!name) continue;
-        await post({ hook_event_name: 'PostToolUse', session_id: rec.sessionId, tool_name: name, tool_use_id: c.tool_use_id, agent_id,
-          tool_response: trimDeep({ content: Array.isArray(c.content) ? c.content : [{ type: 'text', text: String(c.content || '') }], is_error: !!c.is_error }, 1500) });
+        toolNames.delete(c.tool_use_id);
+        await send({ hook_event_name: 'PostToolUse', session_id: rec.sessionId, tool_name: name, tool_use_id: c.tool_use_id, agent_id,
+          tool_response: { content: Array.isArray(c.content) ? c.content : [{ type: 'text', text: String(c.content || '') }], is_error: !!c.is_error } });
       } else if (c.type === 'text' && rec.type === 'user' && !rec.isSidechain && typeof c.text === 'string' && !rec.toolUseResult && !c.text.startsWith('<')) {
-        await post({ hook_event_name: 'UserPromptSubmit', session_id: rec.sessionId, prompt: c.text });
+        await send({ hook_event_name: 'UserPromptSubmit', session_id: rec.sessionId, prompt: c.text });
       }
     }
     if (rec.type === 'user' && !rec.isSidechain && typeof (rec.message && rec.message.content) === 'string' && !rec.message.content.startsWith('<')) {
-      await post({ hook_event_name: 'UserPromptSubmit', session_id: rec.sessionId, prompt: rec.message.content });
+      await send({ hook_event_name: 'UserPromptSubmit', session_id: rec.sessionId, prompt: rec.message.content });
     }
   };
 
+  // Lit au plus CHUNK_MAX octets ; une ligne plus grosse que ça est sautée au lieu d'être chargée.
+  const readFile = async f => {
+    let size;
+    try { size = fs.statSync(f).size; } catch { offsets.delete(f); skipping.delete(f); return; }
+    let from = offsets.has(f) ? offsets.get(f) : 0;
+    if (size < from) from = 0; // fichier tronqué ou recréé
+    if (size === from) { offsets.set(f, size); return; }
+    const len = Math.min(size - from, CHUNK_MAX);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(f, 'r');
+    try { fs.readSync(fd, buf, 0, len, from); } finally { fs.closeSync(fd); }
+    let start = 0;
+    if (skipping.has(f)) {
+      const nl = buf.indexOf(10);
+      if (nl < 0) { offsets.set(f, from + len); return; }
+      skipping.delete(f);
+      start = nl + 1;
+    }
+    const lastNl = buf.lastIndexOf(10);
+    if (lastNl < start) {
+      if (len === CHUNK_MAX) { skipping.add(f); offsets.set(f, from + len); } // ligne géante
+      return;
+    }
+    offsets.set(f, from + lastNl + 1);
+    for (const line of buf.toString('utf8', start, lastNl).split('\n')) if (line.trim()) await handleLine(line, f);
+  };
+
+  let busy = false;
   const tick = async () => {
-    const files = isDir ? listJsonl(target) : [target];
-    for (const f of files) {
-      let size;
-      try { size = fs.statSync(f).size; } catch { continue; }
-      const from = offsets.has(f) ? offsets.get(f) : 0;
-      if (size <= from) { offsets.set(f, size); continue; }
-      const fd = fs.openSync(f, 'r');
-      const buf = Buffer.alloc(size - from);
-      fs.readSync(fd, buf, 0, buf.length, from);
-      fs.closeSync(fd);
-      const text = buf.toString('utf8');
-      const lastNl = text.lastIndexOf('\n');
-      if (lastNl < 0) continue;
-      offsets.set(f, from + Buffer.byteLength(text.slice(0, lastNl + 1)));
-      for (const line of text.slice(0, lastNl).split('\n')) if (line.trim()) await handleLine(line, f);
+    if (busy) return; // un passage lent ne se superpose jamais au suivant
+    busy = true;
+    try {
+      if (isDir && Date.now() - lastScan > RESCAN_MS) {
+        lastScan = Date.now();
+        files = listJsonl(target, RECENT_MS);
+        const current = new Set(files);
+        for (const f of offsets.keys()) if (!current.has(f)) { offsets.delete(f); skipping.delete(f); }
+        for (const f of files) {
+          if (offsets.has(f)) continue;
+          // Créé depuis le démarrage : lu depuis le début. Ancien transcript qui se réveille : seulement la suite.
+          try { const st = fs.statSync(f); offsets.set(f, st.birthtimeMs > startedAt ? 0 : st.size); } catch { /* ignore */ }
+        }
+      }
+      for (const f of files) await readFile(f);
+    } finally {
+      busy = false;
     }
   };
   setInterval(() => { tick().catch(() => {}); }, 400);
 }
 
-module.exports = { redact, trimDeep };
+module.exports = { redact, trimDeep, shrinkPayload, salvage, listJsonl };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

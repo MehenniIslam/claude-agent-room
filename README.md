@@ -9,9 +9,9 @@
 [![Node ≥ 18.17](https://img.shields.io/badge/node-%E2%89%A5%2018.17-5ef1ff.svg)](https://nodejs.org)
 [![Local-first](https://img.shields.io/badge/donn%C3%A9es-100%25%20locales-7ee787.svg)](SECURITY.md)
 
-![La chambre en pleine démo](docs/screenshot.png)
+<img src="docs/iso-studio.jpg" width="720" alt="La chambre isométrique en pleine démo : Claude au centre, les sous-agents à leur poste">
 
-[Installation](#-installation) · [Brancher Claude Code](#-brancher-claude-code) · [Utilisation](#-utilisation) · [Sécurité](#-sécurité-et-confidentialité) · [Dépannage](#-dépannage) · [API](#-protocole-dévénements)
+[Installation](#-installation) · [Brancher Claude Code](#-brancher-claude-code) · [Utilisation](#-utilisation) · [Terminal](#-dans-le-terminal) · [Gros projets](#-gros-projets) · [Sécurité](#-sécurité-et-confidentialité) · [Dépannage](#-dépannage) · [API](#-protocole-dévénements)
 
 </div>
 
@@ -21,11 +21,12 @@ Chaque sous-agent que Claude crée apparaît dans un rayon de lumière, **marche
 
 ## ✨ Ce que tu obtiens
 
-- 🎮 **Une chambre vivante** : pathfinding A*, animations, bulles qui s'empilent, voyants verts/rouges quand les tests passent ou cassent.
+- 🧊 **Une chambre en 3D isométrique** : murs et meubles en volume, ombres, lumière, personnages en pixel art qui marchent (pathfinding A*), s'assoient, lisent, tapent du code. Claude porte son sweat orange et une petite étincelle au-dessus de la tête.
 - 🌍 **4 mondes** : Studio dev, Opéra, Jardin, Salle de classe, changeables en pleine mission.
 - 🗂️ **Le suivi des fichiers** : tout ce que les agents créent ✚, modifient ✎ ou lisent ◌, avec l'auteur.
 - 🧭 **Le contexte complet** : arbre des agents, journal filtrable, fiche détaillée (prompt initial, historique) au clic.
-- 🔌 **Deux façons de l'utiliser** : en **plugin** dans un panneau de Claude Code (rien à lancer), ou en **page web** sur un deuxième écran.
+- 🔌 **Trois façons de l'utiliser** : en **plugin** dans un panneau de Claude Code, en **page web** sur un deuxième écran, ou **directement dans le terminal**.
+- 🏋️ **Tient la charge** : pensé pour les gros projets et les longues sessions (mémoire bornée partout, rien qui grossit sans fin).
 - 🔒 **Local et sûr** : aucune donnée ne quitte ta machine, les clés API et mots de passe sont masqués, les autres sites ne peuvent pas espionner la chambre.
 
 ## 🚀 Installation
@@ -152,14 +153,14 @@ Seules les nouvelles lignes sont rejouées.
 
 ### 4 mondes au choix
 
-![Studio, Opéra, Jardin, Salle de classe](docs/worlds.png)
+<img src="docs/iso-opera.jpg" width="360" alt="Monde Opéra"> <img src="docs/iso-garden.jpg" width="360" alt="Monde Jardin"> <img src="docs/iso-classroom.jpg" width="360" alt="Monde Salle de classe">
 
 | Monde | Claude est… | Planifier | Lire / chercher | Coder | Tester (Bash) | Pause |
 |---|---|---|---|---|---|---|
 | 💻 Studio dev | Orchestrateur | tableau blanc | bibliothèque + serveurs | 4 bureaux dev | banc de test | canapé + café |
-| 🎭 Opéra | Chef d'orchestre | grande partition | partitions + orgue | pupitres des musiciens | régie son & lumière | loge VIP |
-| 🌻 Jardin | Jardinier en chef | plan du potager | serre + ruches | carrés potagers | établi d'arrosage | barbecue |
-| 🏫 Salle de classe | Professeur | tableau noir | bibliothèque + aquarium | pupitres d'élèves | paillasse de sciences | coin récré |
+| 🎭 Opéra | Chef d'orchestre | grande partition | partitions + orgue | pupitres des musiciens | régie son | loge en velours |
+| 🌻 Jardin | Jardinier en chef | plan du potager | serre + ruche | établis | établi d'arrosage | transats |
+| 🏫 Salle de classe | Professeur | tableau noir à la craie | bibliothèque | pupitres d'élèves | paillasse de sciences | coin lecture |
 
 Le choix est mémorisé. Lien direct : `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
 
@@ -167,9 +168,42 @@ Le choix est mémorisé. Lien direct : `http://localhost:3030/?world=opera` (`st
 
 Un sous-agent qui a rendu son rapport ne sera plus jamais rappelé. Par défaut, la chambre le montre sans détour : après sa pause au canapé, **Claude sort un fusil à pompe**. Clic-clac, BANG, l'agent part en petit fantôme avec une dernière réplique. Pur cartoon : des étoiles et un halo, rien de plus.
 
-![Retraite à la pompe](docs/retraite.png)
-
 S'il est rappelé avant le tir, il est épargné. Préfère la version douce ? Menu **Fin des agents → ☕ Pause café** (ou `?fin=cafe`).
+
+## 💻 Dans le terminal
+
+Pas envie d'ouvrir un navigateur ? La chambre s'affiche aussi directement dans le terminal, en couleurs :
+
+```bash
+npx github:MehenniIslam/claude-agent-room tui
+```
+
+Le serveur démarre tout seul s'il ne tourne pas déjà. Tu vois le plan de la chambre (Claude = ✦, chaque sous-agent = son initiale, en minuscule quand il a fini), la liste des agents, les fichiers modifiés et le journal :
+
+```
+ ✚ Claude Agent Room  ● En direct · Claude Code branché   q quitter · d démo · r vider · w monde
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  Agents 3 au travail · 2 en pause
+▀▀▀▀▀▀A▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀B▀▀▀▀▀▀▀▀▀  ✦ Claude orchestre
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀✦▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  F Front Coder code · Edit
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀F▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  Q QA Tester teste · Bash
+▀▀▀▀Q▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀a▀▀b▀▀  Fichiers modifiés
+                                                    ✎ src/pages/Login.tsx Front
+```
+
+Touches : <kbd>q</kbd> quitter · <kbd>d</kbd> démo · <kbd>r</kbd> vider · <kbd>w</kbd> monde suivant. Sur un terminal ancien sans couleurs 24 bits, ajoute `--256`.
+
+## 🏋️ Gros projets
+
+La chambre est conçue pour ne jamais ralentir Claude ni planter, même sur un gros dépôt avec des dizaines de sous-agents et des heures de session :
+
+| Où | Garde-fou |
+|---|---|
+| Hook | Tronque tout ce qui est gros (contenu de fichiers, diffs d'`Edit`/`MultiEdit`, sorties de commandes) : chaque envoi fait moins de 200 Ko. stdin limité à 16 Mo ; au-delà, l'événement est quand même transmis (type et outil). Ne bloque jamais Claude : 700 ms max, sortie silencieuse. |
+| Suivi de transcript (`watch`) | Relit la liste des fichiers toutes les 5 s seulement, ne suit que les transcripts des 48 dernières heures, lit par morceaux de 4 Mo et saute les lignes géantes au lieu de les charger. |
+| Serveur | Historique de 400 événements, sous-agents mémorisés bornés, limite de débit généreuse (150 événements/s), onglet trop lent déconnecté plutôt que de saturer la mémoire. |
+| Page web | 40 personnages au plus dans la chambre (les plus anciens au repos s'en vont), 500 fichiers suivis, journal de 400 lignes, fiche redessinée une fois par image. Meubles pré-rendus : seule la scène est redessinée à chaque image. |
+| Plugin | Au plus 6 agents en pause dans le salon, pour que le dessin reste sous la limite de taille du panneau. |
+| Terminal | 10 images/s au plus, seulement quand quelque chose bouge ; 40 agents, 200 lignes de journal, 100 fichiers. |
 
 ## 🔒 Sécurité et confidentialité
 
@@ -312,7 +346,8 @@ Dans la console du navigateur, `roomDebug.emit({...})` injecte un événement lo
 flowchart LR
   CC["Claude Code"] -- "hooks (stdin JSON)" --> H["claude-hook.js<br/>masque les secrets"]
   H -- "POST /api/event" --> S["Serveur local<br/>Express + ws<br/>127.0.0.1:3030"]
-  S -- "WebSocket /ws" --> B["Navigateur<br/>chambre pixel art"]
+  S -- "WebSocket /ws" --> B["Navigateur<br/>chambre isométrique"]
+  S -- "WebSocket /ws" --> T["Terminal<br/>(tui)"]
   X["Tes scripts"] -. "POST / WS" .-> S
   CC -. "plugin (sans serveur)" .-> P["Panneau Agent Room"]
 ```
@@ -327,7 +362,8 @@ claude-agent-room/
 ├── bridge/
 │   ├── claude-hook.js       # hook stdin → POST (+ masquage, + mode --jsonl)
 │   └── setup-hooks.js       # installe / retire les hooks
-├── public/                  # page web : moteur pixel art, 4 mondes, HUD, polices
+├── public/                  # page web : moteur isométrique, 4 mondes, HUD, polices
+├── tui/                     # la chambre dans le terminal
 ├── plugin/agent-room/       # plugin Claude Code : panneau SVG, suivi des fichiers
 ├── .claude-plugin/          # marketplace (rend le dépôt installable avec /plugin)
 └── test/                    # tests : npm test
@@ -335,26 +371,27 @@ claude-agent-room/
 
 ## 🎨 Ajouter ton propre monde
 
-Tous les mondes partagent la même disposition (postes, obstacles, chemins) ; un monde ne fait que redessiner le décor. Ajoute une fonction dans `public/worlds.js` et enregistre-la dans `ROOM_WORLDS` :
+Tous les mondes partagent la même disposition (postes, obstacles, chemins) ; un monde, c'est des textes, une **palette** et un **décor** peint une seule fois. Ajoute un objet dans `public/worlds.js` et enregistre-le dans `ROOM_WORLDS` :
 
 ```js
-function spaceship(api) {
-  const { px, g } = api;            // px(contexte, x, y, largeur, hauteur, couleur)
-  return {
-    id: 'spaceship', name: 'Vaisseau spatial', icon: '🚀', claudeTitle: 'Commandant',
-    glyphs: ['✦', '01', '◉'],       // particules au poste "code"
-    status: { coding: 'Pilote', reading: 'Scanne', planning: 'Trace la route', bash: 'Teste les moteurs', coffee: 'En cabine' },
-    background(c, rand) { /* sol, murs, meubles fixes (dessinés une seule fois) */ },
-    top(t) { /* animations du mur : étoiles, écrans… */ },
-    board(t, strokes) { api.drawStrokes(strokes, t); },
-    props(t) { return [ /* { y: ligne de base, draw: () => … } triés avec les personnages */ ]; },
-    lighting(t) { api.vignette(0.4); }
-  };
-}
-root.ROOM_WORLDS = { opera, garden, classroom, spaceship };
+const spaceship = {
+  id: 'spaceship', name: 'Vaisseau spatial', icon: '🚀', claudeTitle: 'Commandant',
+  glyphs: ['✦', '01', '◉'],          // particules au-dessus des postes "code"
+  status: { coding: 'Pilote', reading: 'Scanne', planning: 'Trace la route', bash: 'Teste les moteurs', coffee: 'En cabine' },
+  pal: {                              // toute clé absente reprend la valeur du Studio
+    floorA: '#2a3140', floorB: '#303848', wallBack: '#1c2230', wallLeft: '#161b26', trim: '#5ef1ff',
+    sky: '#05060f', sofa: '#3a4a6a', board: '#0f2a3a', boardInk: '#5ef1ff', night: 'rgba(0,10,30,0.3)'
+  },
+  decor({ planeS, planeE, floor, rand }) {
+    // hublots sur le mur de gauche, bandes lumineuses au sol
+    for (const d of [70, 110]) planeE(0, d, 20, 16, 16, '#5ef1ff');
+    floor(140, 120, 40, 4, '#5ef1ff');
+  }
+};
+root.ROOM_WORLDS = { studio, opera, garden, classroom, spaceship };
 ```
 
-Les emplacements à respecter sont listés en tête de `worlds.js`. L'objet `api` donne aussi l'état de la chambre : `codeUser(i)`, `readers()`, `benchRunning()`, `mainActive()`, `deskPile()`, etc.
+Les repères (tableau, fenêtre, bureaux…) et toutes les fonctions de dessin disponibles dans `decor` sont décrits en tête de `worlds.js`. Les meubles, les écrans et les personnages suivent automatiquement la palette.
 
 ## 🤝 Contribuer
 

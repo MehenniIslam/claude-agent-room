@@ -100,7 +100,7 @@ function createGuard({ host = '127.0.0.1', token = '', allowedHosts = [] } = {})
 }
 
 /** Seau à jetons par clé (adresse IP ou connexion). */
-function createRateLimiter({ capacity = 400, refillPerSec = 40 } = {}) {
+function createRateLimiter({ capacity = 1500, refillPerSec = 150 } = {}) {
   const buckets = new Map();
   setInterval(() => {
     const t = Date.now();

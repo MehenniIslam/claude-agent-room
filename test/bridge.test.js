@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { redact } = require('../bridge/claude-hook.js');
+const { redact, shrinkPayload, salvage } = require('../bridge/claude-hook.js');
 const { applyHooks, isInstalled, commandFor } = require('../bridge/setup-hooks.js');
 const { HookNormalizer } = require('../server/normalize.js');
 
@@ -62,4 +62,36 @@ test('normalizer : spawn, outil attribué au sous-agent, fin de mission', () => 
   assert.equal(done.at(-1).type, 'SUBAGENT_COMPLETE');
   const [after] = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} });
   assert.equal(after.agentId, 'claude-main');
+});
+
+test('gros projet : un Edit ou MultiEdit énorme reste sous la limite du serveur', () => {
+  const big = 'x'.repeat(3 * 1024 * 1024);
+  const payload = shrinkPayload({
+    hook_event_name: 'PreToolUse', tool_name: 'MultiEdit',
+    tool_input: { file_path: 'src/huge.ts', edits: Array.from({ length: 500 }, () => ({ old_string: big, new_string: big })) },
+    tool_response: { content: [{ type: 'text', text: big }] }
+  });
+  assert.ok(JSON.stringify(payload).length < 200 * 1024);
+  assert.equal(payload.tool_input.file_path, 'src/huge.ts');
+});
+
+test('stdin tronqué ou illisible : on récupère quand même l\'événement', () => {
+  const raw = '{"session_id":"s1","hook_event_name":"PostToolUse","tool_name":"Read","tool_response":{"content":"' + 'y'.repeat(50000);
+  assert.deepEqual(
+    { ...salvage(raw), tool_input: undefined },
+    { hook_event_name: 'PostToolUse', tool_name: 'Read', tool_use_id: undefined, session_id: 's1', agent_id: undefined, tool_input: undefined }
+  );
+  assert.equal(salvage('pas du json'), null);
+});
+
+test('longue session : la mémoire du normalizer reste bornée', () => {
+  const n = new HookNormalizer();
+  for (let i = 0; i < 1000; i++) {
+    n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Task', tool_use_id: `toolu_${i}`, tool_input: { description: 'Agent ' + i } });
+    n.convert({ hook_event_name: 'PostToolUse', tool_name: 'Task', tool_use_id: `toolu_${i}`, tool_response: 'ok' });
+  }
+  assert.ok(n.subs.size <= 300);
+  assert.ok(n.byToolUse.size <= 300);
+  for (let i = 0; i < 150; i++) n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Task', tool_use_id: `open_${i}`, tool_input: {} });
+  assert.ok(n.stack.length <= 100);
 });

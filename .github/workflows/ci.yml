@@ -31,7 +31,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Vérifier la syntaxe
-        run: node --check public/app.js && node --check public/worlds.js && node --check bin/cli.js
+        run: node --check public/app.js && node --check public/worlds.js && node --check bin/cli.js && node --check tui/index.js
       - name: Audit des dépendances
         run: npm audit --omit=dev --audit-level=high
       - name: Le CLI démarre

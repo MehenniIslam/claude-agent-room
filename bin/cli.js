@@ -6,6 +6,7 @@
  *   claude-agent-room hooks install|remove|status [--project] [--dry-run]
  *   claude-agent-room demo [--speed 2]
  *   claude-agent-room watch [fichier.jsonl|dossier]
+ *   claude-agent-room tui [--256]
  *   claude-agent-room doctor
  */
 const fs = require('fs');
@@ -37,6 +38,7 @@ const HELP = `
     claude-agent-room hooks status        indique si les hooks sont installés
     claude-agent-room demo                lance la démo dans la chambre ouverte
     claude-agent-room watch [chemin]      suit un transcript au lieu des hooks
+    claude-agent-room tui                 la chambre dans le terminal (démarre le serveur si besoin)
     claude-agent-room doctor              vérifie l'installation de A à Z
 
   Options :
@@ -87,6 +89,14 @@ async function cmdDemo() {
     console.error(`✖ Impossible de joindre la chambre sur ${base} (${e.message}). Lance d'abord : npx github:MehenniIslam/claude-agent-room`);
     process.exitCode = 1;
   }
+}
+
+async function cmdTui() {
+  // Pas de serveur ? On le démarre dans ce processus, sans rien afficher (le terminal est pour la chambre).
+  let up = false;
+  try { up = (await api('/api/health')).name === 'claude-agent-room'; } catch { up = false; }
+  if (!up) await require('../server/index.js').start({ port, quiet: true });
+  require('../tui/index.js').start({ port });
 }
 
 function cmdWatch(target) {
@@ -170,6 +180,7 @@ async function main() {
     case 'hooks': return cmdHooks(sub);
     case 'demo': return cmdDemo();
     case 'watch': return cmdWatch(sub);
+    case 'tui': return cmdTui();
     case 'doctor': return cmdDoctor();
     default:
       console.error(`✖ Commande inconnue : ${cmd}`);

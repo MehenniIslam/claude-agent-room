@@ -1,6 +1,6 @@
 {
   "name": "claude-agent-room",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Visualiseur temps réel d'un agent Claude orchestrateur et de ses sous-agents dans une chambre en pixel art.",
   "main": "server/index.js",
   "bin": {
@@ -11,6 +11,7 @@
     "bin/",
     "bridge/",
     "server/",
+    "tui/",
     "public/",
     "README.md",
     "LICENSE",
@@ -27,7 +28,7 @@
     "hooks:remove": "node bin/cli.js hooks remove",
     "hooks:status": "node bin/cli.js hooks status",
     "watch:transcript": "node bin/cli.js watch",
-    "test": "node --test test/bridge.test.js test/server.test.js"
+    "test": "node --test test/bridge.test.js test/server.test.js test/tui.test.js"
   },
   "keywords": [
     "claude",

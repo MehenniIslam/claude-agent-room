@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0
+
+### Interface
+- **Nouvelle chambre en 3D isométrique** : murs et meubles en volume, ombres et lumière, sol et murs calculés pixel par pixel (bords nets), meubles découpés en tranches pour que les personnages passent devant ou derrière.
+- **Nouveaux personnages** plus grands, 4 directions, assis, en train de lire, de taper ou de boire un café ; accessoires par rôle. Claude a un look original : sweat orange à capuche et petite étincelle au-dessus de la tête.
+- Les 4 mondes refaits en isométrique (`public/worlds.js` : palette + décor, bien plus simple à étendre).
+- Étiquettes compactes (nom seul) qui se masquent au lieu de s'empiler quand la chambre est pleine ; bulles plus légères.
+- Sur petit écran, la chambre remplit la place disponible au lieu de rester minuscule.
+
+### Mode terminal
+- Nouvelle commande `claude-agent-room tui` : la chambre en couleurs dans le terminal (plan, agents, fichiers, journal), serveur démarré automatiquement si besoin.
+
+### Gros projets
+- Hook : tous les champs volumineux sont tronqués (avant, un gros `Edit`/`MultiEdit` dépassait la limite du serveur et l'événement était perdu) ; stdin borné, récupération de l'événement si le JSON est illisible.
+- Suivi de transcript : liste des fichiers relue toutes les 5 s (et non plus 2,5 fois par seconde), transcripts récents seulement, lecture par morceaux de 4 Mo, lignes géantes sautées, passages jamais superposés.
+- Serveur : mémoire des sous-agents bornée, limite de débit relevée, client trop lent déconnecté.
+- Page web : agents, fichiers et fiche bornés ; meubles pré-rendus ; aucune allocation par image.
+- Plugin : salon limité à 6 agents en pause (le dessin ne dépasse plus la limite de taille du panneau).
+
 ## 1.1.0
 
 ### Sécurité

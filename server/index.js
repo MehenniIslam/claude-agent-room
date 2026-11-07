@@ -81,7 +81,10 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
   function broadcast(event) {
     const data = JSON.stringify({ kind: 'event', event });
     for (const client of wss.clients) {
-      if (client.readyState === WebSocket.OPEN) client.send(data);
+      if (client.readyState !== WebSocket.OPEN) continue;
+      // Onglet figé ou trop lent : on le coupe plutôt que d'empiler des Mo en mémoire (il se reconnecte seul).
+      if (client.bufferedAmount > 8 * 1024 * 1024) { client.terminate(); continue; }
+      client.send(data);
     }
     stats.broadcast++;
   }

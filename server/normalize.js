@@ -12,6 +12,7 @@
 
 const MAIN_ID = 'claude-main';
 const SPAWN_TOOLS = new Set(['Task', 'Agent', 'dispatch_subagent']);
+const MAX_TRACKED = 300; // sous-agents mémorisés au plus (les actifs ne sont jamais oubliés)
 
 function short(text, max = 140) {
   if (text == null) return '';
@@ -110,6 +111,19 @@ class HookNormalizer {
     const s = this.subs.get(subId);
     if (s) s.done = true;
     this.stack = this.stack.filter(id => id !== subId);
+    this.prune();
+  }
+
+  /** Longues sessions : on oublie les plus vieux sous-agents terminés pour que la mémoire reste bornée. */
+  prune(max = MAX_TRACKED) {
+    if (this.subs.size <= max) return;
+    for (const [id, s] of this.subs) {
+      if (this.subs.size <= max) break;
+      if (!s.done) continue;
+      this.subs.delete(id);
+      if (s.toolUseId) this.byToolUse.delete(s.toolUseId);
+      if (s.agentRef) this.byAgentRef.delete(s.agentRef);
+    }
   }
 
   /** Retourne une liste (éventuellement vide) d'événements normalisés. */
@@ -135,6 +149,8 @@ class HookNormalizer {
       this.subs.set(id, sub);
       if (p.tool_use_id) this.byToolUse.set(p.tool_use_id, id);
       this.stack.push(id);
+      // Sous-agents jamais clos (Claude interrompu…) : on ne les garde pas indéfiniment comme "actifs".
+      while (this.stack.length > 100) this.finish(this.stack[0]);
       const roleHint = `${input.subagent_type || ''} ${input.description || ''} ${input.prompt || ''}`;
       return [{
         ...base,
