@@ -33,11 +33,18 @@
       <div><dt>Agents actifs</dt><dd id="c-agents">0</dd></div>
       <div><dt>Outils</dt><dd id="c-tools">0</dd></div>
       <div><dt>Événements</dt><dd id="c-events">0</dd></div>
+      <div id="cost-box" title="Estimation au tarif public de l'API Anthropic (un abonnement Pro/Max ne facture pas au token)"><dt>Coût estimé</dt><dd id="c-cost">—</dd></div>
     </dl>
 
     <div class="pickers">
       <label class="picker"><span>Monde</span><select id="world-select" aria-label="Choisir le monde"></select></label>
-      <label class="picker"><span>Fin des agents</span>
+      <label class="picker"><span>Ambiance</span>
+        <select id="mode-select" aria-label="Ambiance de la chambre">
+          <option value="fun">🎉 Fun</option>
+          <option value="pro">💼 Pro</option>
+        </select>
+      </label>
+      <label class="picker" id="ending-picker"><span>Fin des agents</span>
         <select id="ending-select" aria-label="Ce qui arrive aux agents terminés">
           <option value="pompe">💥 À la pompe</option>
           <option value="cafe">☕ Pause café</option>
@@ -49,6 +56,7 @@
       <button id="btn-demo" class="btn btn--primary" type="button" title="Lancer la démo (D)">▶ <span class="long">Lancer la </span>démo</button>
       <button id="btn-spawn" class="btn" type="button" title="Faire apparaître un agent de test (S)">✦ <span class="long">Tester un </span>spawn</button>
       <div class="btn-group" role="group" aria-label="Affichage">
+        <button id="btn-notify" class="btn btn--icon" type="button" title="Prévenir quand Claude a fini ou attend ta réponse (N)" aria-label="Notifications" aria-pressed="true">🔔</button>
         <button id="btn-reset" class="btn btn--icon" type="button" title="Vider la chambre (R)" aria-label="Vider la chambre">⟲</button>
         <button id="btn-fullscreen" class="btn btn--icon" type="button" title="Plein écran (F)" aria-label="Plein écran">⛶</button>
         <button id="btn-help" class="btn btn--icon" type="button" title="Aide et raccourcis (?)" aria-label="Aide et raccourcis">?</button>
@@ -115,8 +123,17 @@
       <section class="panel panel--grow">
         <div class="tabs" role="tablist" aria-label="Activité">
           <button class="tab active" id="tab-log" role="tab" aria-selected="true" aria-controls="pane-log" type="button">Journal</button>
+          <button class="tab" id="tab-tasks" role="tab" aria-selected="false" aria-controls="pane-tasks" type="button">Tâches <span id="tasks-count" class="tab-count">0</span></button>
           <button class="tab" id="tab-files" role="tab" aria-selected="false" aria-controls="pane-files" type="button">Fichiers <span id="files-count" class="tab-count">0</span></button>
-          <button id="btn-clear-log" class="link-btn" type="button">effacer</button>
+          <span class="tab-tools">
+            <button id="btn-export" class="link-btn" type="button" title="Télécharger le journal du jour (JSON ou CSV)">exporter</button>
+            <button id="btn-clear-log" class="link-btn" type="button">effacer</button>
+          </span>
+        </div>
+        <div id="pane-tasks" class="tab-pane hidden" role="tabpanel" aria-labelledby="tab-tasks">
+          <div class="progress" aria-hidden="true"><span id="tasks-bar"></span></div>
+          <p id="tasks-summary" class="muted small">Le plan de Claude s'affichera ici dès qu'il fera une liste de tâches.</p>
+          <ul id="task-list" class="task-list"></ul>
         </div>
         <div id="pane-log" class="tab-pane" role="tabpanel" aria-labelledby="tab-log">
           <div class="filters" role="group" aria-label="Filtrer le journal">
@@ -147,8 +164,14 @@
         <div><dt><kbd>R</kbd></dt><dd>Vider la chambre</dd></div>
         <div><dt><kbd>W</kbd></dt><dd>Monde suivant</dd></div>
         <div><dt><kbd>F</kbd></dt><dd>Plein écran</dd></div>
+        <div><dt><kbd>N</kbd></dt><dd>Notifications oui / non</dd></div>
         <div><dt><kbd>Échap</kbd></dt><dd>Fermer la fiche</dd></div>
       </dl>
+    </section>
+    <section>
+      <h3>Économiser des tokens</h3>
+      <p class="muted small">Au début d'un nouveau projet, Claude te propose une sélection d'outils vérifiés (règles CLAUDE.md, Caveman, Context7…). Liste, gains mesurés et risques :</p>
+      <div class="copy-row"><code id="help-advisor">npx github:MehenniIslam/claude-agent-room advisor</code><button class="copy-btn" type="button" data-copy="#help-advisor" aria-label="Copier la commande">Copier</button></div>
     </section>
     <section>
       <h3>Brancher Claude Code</h3>
@@ -163,6 +186,24 @@
       <h3>Confidentialité</h3>
       <p class="muted small">Tout reste sur ta machine. Le serveur n'écoute que <code>127.0.0.1</code>, refuse les autres sites, et masque les clés API, tokens et mots de passe repérés avant de les afficher.</p>
     </section>
+  </dialog>
+
+  <dialog id="diff" class="help diff-dialog" aria-labelledby="diff-title">
+    <div class="help-head">
+      <h2 id="diff-title">Fichier</h2>
+      <button id="diff-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+    </div>
+    <p id="diff-meta" class="muted small"></p>
+    <pre id="diff-body" class="diff-body"></pre>
+  </dialog>
+
+  <dialog id="export" class="help" aria-labelledby="export-title">
+    <div class="help-head">
+      <h2 id="export-title">Exporter le journal</h2>
+      <button id="export-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+    </div>
+    <p class="muted small">Le journal est gardé sur ta machine (<code>~/.claude/agent-room/history/</code>), secrets déjà masqués. Choisis un jour :</p>
+    <ul id="export-days" class="export-days"></ul>
   </dialog>
 
   <script src="demo-scenario.js"></script>

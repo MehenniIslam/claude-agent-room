@@ -20,7 +20,8 @@ const path = require('path');
 const MARKER = 'claude-hook.js';
 // Événements avec matcher (outils) et sans matcher (cycle de vie).
 const TOOL_EVENTS = ['PreToolUse', 'PostToolUse'];
-const LIFECYCLE_EVENTS = ['SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop'];
+// SessionStart : conseiller tokens · Notification : « Claude attend ta réponse »
+const LIFECYCLE_EVENTS = ['SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop', 'SessionStart', 'Notification'];
 const ALL_EVENTS = [...TOOL_EVENTS, ...LIFECYCLE_EVENTS];
 
 const SOURCE_HOOK = path.resolve(__dirname, 'claude-hook.js');
@@ -88,6 +89,8 @@ function writeAtomic(file, content) {
 function installHookScript() {
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
   fs.copyFileSync(SOURCE_HOOK, INSTALLED_HOOK);
+  // le catalogue vérifié du conseiller tokens voyage avec le hook
+  fs.copyFileSync(path.resolve(__dirname, '..', 'advisor', 'catalog.json'), path.join(INSTALL_DIR, 'catalog.json'));
   return INSTALLED_HOOK;
 }
 
@@ -134,7 +137,7 @@ function run(argv = process.argv.slice(2)) {
   return true;
 }
 
-module.exports = { applyHooks, isInstalled, commandFor, stripOurs, run, INSTALLED_HOOK };
+module.exports = { applyHooks, isInstalled, commandFor, stripOurs, run, INSTALLED_HOOK, ALL_EVENTS };
 
 if (require.main === module) {
   try {

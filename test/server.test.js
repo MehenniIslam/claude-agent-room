@@ -5,7 +5,8 @@ const WebSocket = require('ws');
 const { createApp } = require('../server/index.js');
 
 async function boot(opts) {
-  const room = createApp(opts);
+  const tmp = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "agent-room-test-"));
+  const room = createApp({ config: { mode: "fun", history: true, retentionDays: 14 }, historyDir: tmp, usageRoot: tmp, persistConfig: false, ...opts });
   await new Promise(r => room.server.listen(0, '127.0.0.1', r));
   const port = room.server.address().port;
   return { room, port, base: `http://127.0.0.1:${port}` };

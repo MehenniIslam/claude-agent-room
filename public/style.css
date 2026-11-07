@@ -402,3 +402,34 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* ------------------------------ Tâches, diff, export, notifications ------------------------------ */
+.tab-tools { margin-left: auto; display: flex; gap: 8px; }
+.tab-tools .link-btn { margin-left: 0; }
+.progress { height: 6px; border-radius: 6px; background: var(--panel-3); overflow: hidden; margin: 2px 0 8px; }
+.progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--cyan)); transition: width 0.4s ease; }
+.task-list { list-style: none; margin: 0; padding: 0 4px 0 0; overflow: auto; flex: 1; font-size: 12.5px; }
+.task-list li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 5px 2px; border-bottom: 1px solid rgba(44, 37, 64, 0.6); }
+.task-list .box { width: 13px; height: 13px; margin-top: 2px; border-radius: 3px; border: 1px solid var(--line-2); display: grid; place-items: center; font-size: 10px; line-height: 1; }
+.task-list .completed .box { background: var(--green); border-color: var(--green); color: #0b1a0e; }
+.task-list .completed .txt { color: var(--muted); text-decoration: line-through; }
+.task-list .in_progress .box { border-color: var(--amber); box-shadow: 0 0 6px rgba(255, 184, 107, 0.6); }
+.task-list .in_progress .txt { color: var(--amber); }
+.diff-dialog { width: min(760px, calc(100% - 32px)); }
+.diff-body {
+  margin: 8px 0 0; max-height: 60vh; overflow: auto; font: 12px/1.5 var(--mono);
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 0;
+}
+.diff-body span { display: block; padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+.diff-body .add { background: rgba(126, 231, 135, 0.12); color: #b9f5c0; }
+.diff-body .del { background: rgba(255, 107, 107, 0.12); color: #ffc4c4; }
+.diff-body .sep { color: var(--muted); border-top: 1px dashed var(--line); margin: 4px 0; }
+.export-days { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.export-days li { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.export-days li span { flex: 1; }
+#btn-notify[aria-pressed="false"] { opacity: 0.55; }
+#cost-box dd { color: var(--amber); }
+.file-list .stat { font-size: 10.5px; margin-left: 4px; }
+.file-list .stat .a { color: var(--green); }
+.file-list .stat .d { color: var(--red); }
+body.pro #ending-picker { display: none; }

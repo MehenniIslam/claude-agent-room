@@ -37,7 +37,7 @@ test('setup-hooks : installation idempotente qui conserve les autres hooks', () 
   const twice = applyHooks(once, { command });
   assert.deepEqual(once, twice);
   assert.equal(once.model, 'opus');
-  assert.equal(isInstalled(once).length, 6);
+  assert.equal(isInstalled(once).length, 8);
   assert.equal(once.hooks.PreToolUse.length, 2);
   assert.deepEqual(once.hooks.PreToolUse[0].hooks[0], mine);
   const removed = applyHooks(once, { remove: true, command });

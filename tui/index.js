@@ -72,11 +72,12 @@ const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', 
 
 /* ---------------------------- État ---------------------------- */
 function createState() {
-  return { agents: new Map(), log: [], files: new Map(), lastMsg: null, colorIdx: 0, claudeSeen: false };
+  return { agents: new Map(), log: [], files: new Map(), lastMsg: null, colorIdx: 0, claudeSeen: false, tasks: [], alert: null };
 }
 let state = createState();
 let theme = 0;
 let status = 'Connexion…';
+let usage = null; // coût envoyé par le serveur
 let dirty = true;
 
 function agent(id, e = {}) {
@@ -132,6 +133,9 @@ function handle(e, replay = false) {
       state.files.set(e.file, { kind: prev && prev.kind !== '·' && kind === '·' ? prev.kind : kind, by: a.name, color: a.color });
       if (state.files.size > MAX_FILES) state.files.delete(state.files.keys().next().value);
     }
+    if (Array.isArray(e.todos)) state.tasks = e.todos.slice(0, 50);
+    else if (e.task && e.task.op === 'add' && e.task.subject) state.tasks.push({ content: e.task.subject, status: 'pending' });
+    else if (e.task && e.task.op === 'update') { const t = state.tasks[Number(e.task.id) - 1]; if (t && e.task.status) t.status = e.task.status; }
     log(a.name, a.color, `[${e.tool || 'outil'}] ${e.message || ''}`, 'tool');
   } else if (type === 'TOOL_END') {
     if (e.success === false) { a.errUntil = Date.now() + 4000; log(a.name, a.color, `✗ ${e.message || e.tool}`, 'err'); }
@@ -145,6 +149,10 @@ function handle(e, replay = false) {
     if (!replay) setTimeout(() => { if (a.done) { moveTo(a, 'lounge'); dirty = true; } }, 3500);
     state.lastMsg = { who: a.name, color: a.color, text: `Rapport : ${e.message || 'mission accomplie'}` };
     log(a.name, a.color, `rapport : ${e.message || ''}`, 'done');
+  } else if (type === 'NOTIFY') {
+    state.lastMsg = { who: 'Claude', color: '#d97757', text: e.message || '' };
+    log('Claude', '#d97757', e.message || '', e.kind === 'waiting' ? 'err' : 'done');
+    if (!replay) { state.alert = { kind: e.kind, at: Date.now() }; if (process.stdout.isTTY) process.stdout.write('\x07'); }
   } else if (type === 'ERROR') {
     a.errUntil = Date.now() + 4000;
     log(a.name, a.color, `erreur : ${e.message || ''}`, 'err');
@@ -211,6 +219,15 @@ function renderPanel(width, height, now) {
   }
   if (!subs.length) out.push(`${DIM}Aucun sous-agent pour le moment.${RESET}`);
   out.push('');
+  if (state.tasks.length) {
+    const done = state.tasks.filter(t => t.status === 'completed').length;
+    const barW = Math.max(6, Math.min(20, width - 22));
+    const fill = Math.round(done / state.tasks.length * barW);
+    out.push(`${BOLD}Plan${RESET} ${fg('#7ee787')}${'█'.repeat(fill)}${DIM}${'░'.repeat(barW - fill)}${RESET} ${done}/${state.tasks.length}`);
+    const cur = state.tasks.find(t => t.status === 'in_progress');
+    if (cur) out.push(`${fg('#ffb86b')}▸ ${short(cur.content, width - 4)}${RESET}`);
+    out.push('');
+  }
   const files = [...state.files.entries()].filter(([, f]) => f.kind !== '·').slice(-5).reverse();
   out.push(`${BOLD}Fichiers modifiés${RESET} ${DIM}${files.length ? '' : 'aucun'}${RESET}`);
   for (const [path, f] of files) out.push(`${fg(f.kind === '+' ? '#7ee787' : '#ffb86b')}${f.kind === '+' ? '✚' : '✎'}${RESET} ${short(path, Math.max(10, width - 16))} ${fg(f.color)}${short(f.by, 10)}${RESET}`);
@@ -229,7 +246,7 @@ function render() {
   dirty = false;
   const now = Date.now();
   const cols = process.stdout.columns || 100, rows = process.stdout.rows || 32;
-  const header = `${bg('#1e1929')}${BOLD}${fg('#d97757')} ✚ Claude Agent Room ${RESET}${bg('#1e1929')} ${status === 'En direct' ? fg('#7ee787') + '● En direct' : fg('#ffb86b') + '● ' + status}${RESET}${bg('#1e1929')}${DIM}${state.claudeSeen ? ' · Claude Code branché' : ''}  q quitter · d démo · r vider · w monde${RESET}`;
+  const header = `${bg('#1e1929')}${BOLD}${fg('#d97757')} ✚ Claude Agent Room ${RESET}${bg('#1e1929')} ${status === 'En direct' ? fg('#7ee787') + '● En direct' : fg('#ffb86b') + '● ' + status}${RESET}${bg('#1e1929')}${DIM}${state.claudeSeen ? ' · Claude Code branché' : ''}${usage && usage.total && usage.total.messages ? ` · ~${usage.total.cost.toFixed(2)}` : ''}${state.alert && Date.now() - state.alert.at < 8000 ? (state.alert.kind === 'waiting' ? ' · ⏳ Claude attend ta réponse' : ' · ✅ Claude a fini') : ''}  q quitter · d démo · r vider · w monde${RESET}`;
   const lines = [fit(header, cols)];
   const wide = cols >= 110;
   const mapCols = wide ? Math.min(96, Math.floor(cols * 0.58)) : cols;
@@ -256,6 +273,8 @@ function step() {
     if (d > 0.5) { const s = Math.min(d, 9); a.x += dx / d * s; a.y += dy / d * s; moving = true; }
     if (a.errUntil > Date.now()) moving = true;
   }
+  // le bandeau « Claude a fini / attend » s'efface tout seul après quelques secondes
+  if (state.alert && Date.now() - state.alert.at < 9000) moving = true;
   if (moving) dirty = true;
   render();
 }
@@ -298,8 +317,9 @@ function start({ port = 3030, host = '127.0.0.1' } = {}) {
     ws.on('message', raw => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
-      if (msg.kind === 'hello') { state = createState(); for (const e of msg.history || []) handle(e, true); }
+      if (msg.kind === 'hello') { state = createState(); for (const e of msg.history || []) handle(e, true); usage = msg.usage || null; }
       else if (msg.kind === 'event') handle(msg.event);
+      else if (msg.kind === 'usage') usage = msg.usage;
       dirty = true;
     });
     ws.on('unexpected-response', (req, res) => { status = res.statusCode === 401 ? 'Jeton requis (AGENT_ROOM_TOKEN)' : `Refusé (${res.statusCode})`; dirty = true; });

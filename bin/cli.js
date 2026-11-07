@@ -30,6 +30,7 @@ const HELP = `
   Visualiseur temps réel de Claude et de ses sous-agents, en pixel art.
 
   Utilisation :
+    claude-agent-room setup               tout installer en une fois (assistant guidé)
     claude-agent-room                     démarre la chambre (http://localhost:3030)
     claude-agent-room --open              … et l'ouvre dans le navigateur
     claude-agent-room hooks install       branche Claude Code (~/.claude/settings.json)
@@ -39,6 +40,8 @@ const HELP = `
     claude-agent-room demo                lance la démo dans la chambre ouverte
     claude-agent-room watch [chemin]      suit un transcript au lieu des hooks
     claude-agent-room tui                 la chambre dans le terminal (démarre le serveur si besoin)
+    claude-agent-room advisor             outils vérifiés pour économiser des tokens
+    claude-agent-room advisor apply essentiel   … les installer (avec vérification des dépôts)
     claude-agent-room doctor              vérifie l'installation de A à Z
 
   Options :
@@ -61,9 +64,9 @@ async function api(route, opts = {}) {
   return data;
 }
 
-async function cmdStart() {
+async function cmdStart(open = flags.has('--open')) {
   const { start } = require('../server/index.js');
-  const room = await start({ port, host: option('host'), open: flags.has('--open') });
+  const room = await start({ port, host: option('host'), open });
   if (!room) return;
   const stop = () => { room.close().then(() => process.exit(0)); setTimeout(() => process.exit(0), 1500).unref(); };
   process.on('SIGINT', stop);
@@ -89,6 +92,40 @@ async function cmdDemo() {
     console.error(`✖ Impossible de joindre la chambre sur ${base} (${e.message}). Lance d'abord : npx github:MehenniIslam/claude-agent-room`);
     process.exitCode = 1;
   }
+}
+
+function askYesNo(question, def = true) {
+  if (!process.stdin.isTTY || flags.has('--yes')) return Promise.resolve(def);
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(res => rl.question(`  ${question} ${def ? '[O/n]' : '[o/N]'} `, a => {
+    rl.close();
+    const v = a.trim().toLowerCase();
+    res(v ? /^(o|oui|y|yes)$/.test(v) : def);
+  }));
+}
+
+// Assistant : hooks, conseiller tokens, ambiance, puis la chambre s'ouvre. Chaque étape est réversible.
+async function cmdSetup() {
+  const os = require('os');
+  const { saveConfig, loadConfig } = require('../server/config.js');
+  console.log(`\n  🛋️  claude-agent-room v${version} — installation guidée\n`);
+  if (await askYesNo('Brancher Claude Code à la chambre ? (hooks dans ~/.claude/settings.json, sauvegarde faite avant)')) {
+    cmdHooks('install');
+  } else {
+    console.log('  → Plus tard : claude-agent-room hooks install');
+  }
+  const advisor = require('../advisor/index.js');
+  const tokens = await askYesNo('Au début de chaque nouveau projet, Claude te propose des outils vérifiés qui économisent des tokens ?');
+  await advisor.run([tokens ? 'on' : 'off']);
+  const cwd = process.cwd();
+  if (cwd !== os.homedir() && await askYesNo(`Ajouter tout de suite les règles d'économie au CLAUDE.md de ${cwd} ?`, false)) {
+    console.log(`  ✅ Règles ajoutées à ${advisor.applyRules(cwd)}`);
+  }
+  const pro = await askYesNo('Ambiance « pro » (sobre, pas de fusil à pompe) ? Non = ambiance fun', loadConfig().mode === 'pro');
+  saveConfig({ mode: pro ? 'pro' : 'fun' });
+  console.log(`  ✅ Ambiance ${pro ? 'pro' : 'fun'} enregistrée (changeable dans la page).\n`);
+  console.log('  Tout est prêt. Relance Claude Code pour charger les hooks.\n');
+  return cmdStart(!flags.has('--no-open'));
 }
 
 async function cmdTui() {
@@ -139,7 +176,7 @@ async function cmdDoctor() {
     try {
       const settings = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '') || '{}');
       const found = setup.isInstalled(settings);
-      if (found.length) { hooked = true; ok(`Hooks ${label} installés (${found.length}/6) dans ${file}`); }
+      if (found.length) { hooked = true; ok(`Hooks ${label} installés (${found.length}/${setup.ALL_EVENTS.length}) dans ${file}`); }
       const cmds = JSON.stringify(settings.hooks || {});
       const legacy = /claude-hook\.js/.test(cmds) && !cmds.includes('.claude/agent-room/claude-hook.js');
       if (legacy) warn(`Les hooks ${label} pointent vers une ancienne copie du script → relance : npx github:MehenniIslam/claude-agent-room hooks install${label === 'projet' ? ' --project' : ''}`);
@@ -181,6 +218,8 @@ async function main() {
     case 'demo': return cmdDemo();
     case 'watch': return cmdWatch(sub);
     case 'tui': return cmdTui();
+    case 'setup': return cmdSetup();
+    case 'advisor': return require('../advisor/index.js').run(argv.slice(argv.indexOf('advisor') + 1));
     case 'doctor': return cmdDoctor();
     default:
       console.error(`✖ Commande inconnue : ${cmd}`);

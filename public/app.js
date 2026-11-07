@@ -328,6 +328,10 @@
   const MAX_AGENTS = 40;            // personnages dans la chambre ; au-delà, les plus vieux terminés s'en vont
   const MAX_EXEC_QUEUE = 4;         // retraites à la pompe en attente
   let inspectorDirty = false;
+  let tasks = [];                   // plan de Claude : [{ content, status }] (TodoWrite / TaskCreate / TaskUpdate)
+  let tasksDirty = true;
+  let usageState = null;            // coût et tokens envoyés par le serveur
+  let roomMode = 'fun';             // ambiance : 'fun' ou 'pro'
 
   function makeAgent(id, opts = {}) {
     const isMain = id === MAIN_ID;
@@ -532,10 +536,15 @@
         const prev = fileIndex.get(f);
         // Un fichier écrit ou modifié garde ce statut même s'il est relu ensuite.
         const keep = prev && kind === 'r' && prev.kind !== 'r';
+        const own = f === e.file; // le diff concerne le fichier de l'outil, pas les chemins cités dans le message
         fileIndex.set(f, {
           path: f, count: (prev ? prev.count : 0) + 1, t: e.timestamp || Date.now(),
           kind: keep ? prev.kind : (prev && prev.kind === 'w' && kind === 'e' ? 'w' : kind),
-          agentId: keep ? prev.agentId : agent.id
+          agentId: keep ? prev.agentId : agent.id,
+          diff: own && e.diff ? e.diff : prev && prev.diff,
+          diffBy: own && e.diff ? agent.id : prev && prev.diffBy,
+          added: (prev ? prev.added || 0 : 0) + (own ? e.added || 0 : 0),
+          removed: (prev ? prev.removed || 0 : 0) + (own ? e.removed || 0 : 0)
         });
         filesDirty = true;
       }
@@ -604,6 +613,8 @@
         const text = e.message || `Outil ${e.tool || ''}`;
         record(a, e, text);
         log(a, 'TOOL', text, e);
+        if (Array.isArray(e.todos)) { tasks = e.todos.slice(0, 50); tasksDirty = true; }
+        if (e.task) applyTask(e.task);
         if (a.id === MAIN_ID) {
           say(a, `[${e.tool || 'outil'}] ${text}`, { minor: true });
           break;
@@ -679,6 +690,15 @@
         break;
       }
 
+      case 'NOTIFY': {
+        const text = e.message || (e.kind === 'waiting' ? "J'attends ta réponse." : "J'ai terminé.");
+        say(main, text);
+        record(main, e, text);
+        log(main, e.kind === 'waiting' ? 'SYS' : 'DONE', text, e);
+        if (!replaying) notifyUser(e.kind === 'waiting' ? 'waiting' : 'done', text);
+        break;
+      }
+
       case 'ERROR': {
         const a = ensureAgent(e);
         if (!replaying) a.errorUntil = now() + 4000;
@@ -725,6 +745,7 @@
     counters.tools = 0; counters.events = 0;
     deskPile = 0; colorIndex = 1;
     fileIndex.clear(); filesDirty = true;
+    tasks = []; tasksDirty = true;
     const main = getMain();
     main.bubbles = []; main.history = []; main.files.clear();
     if (selectedId && selectedId !== MAIN_ID) closeInspector();
@@ -798,7 +819,7 @@
 
     // Discussions au coin canapé
     const lounging = [...agents.values()].filter(a => !a.gone && a.activity === 'coffee' && !a.path.length && !a.bubbles.length);
-    if (lounging.length && t - lastSmallTalk > 11000 + Math.random() * 9000) {
+    if (roomMode === 'fun' && lounging.length && t - lastSmallTalk > 11000 + Math.random() * 9000) {
       lastSmallTalk = t;
       const a = pick(lounging);
       say(a, pick(SMALL_TALK));
@@ -1302,6 +1323,17 @@
   }
   // Les traits du tableau (coordonnées locales 16–88 × 10–32) projetés sur le mur du fond.
   function drawBoardStrokes(t) {
+    // Quand Claude a un plan, le tableau l'affiche : une case par tâche (verte = faite, ambre = en cours).
+    if (tasks.length) {
+      const ink = pal.boardInk || '#3a3352';
+      tasks.slice(0, 8).forEach((task, i) => {
+        const z = 35 - i * 3;
+        const col = task.status === 'completed' ? '#3fbf5a' : task.status === 'in_progress' ? (Math.floor(t / 400) % 2 ? '#ffb86b' : '#e08a2a') : ink;
+        planeS(g, 22, FLOOR_Y, 4, z - 2, 2, col);
+        planeS(g, 28, FLOOR_Y, 6 + (task.content.length * 7) % 50, z - 1, 1, task.status === 'completed' ? shade(ink, 0.45) : ink);
+      });
+      return;
+    }
     for (const s of whiteboard) {
       const p = clamp((t - s.t0) / 700, 0, 1);
       const pts = [];
@@ -1685,6 +1717,20 @@
     }
     ctx.globalAlpha = 1;
 
+    // avancement du plan, au-dessus du tableau
+    if (tasks.length) {
+      const done = tasks.filter(x => x.status === 'completed').length;
+      const label = `Plan ${done}/${tasks.length}`;
+      const pos = P(54, FLOOR_Y, 44);
+      ctx.font = `600 ${Math.max(9, Math.round(U * 2.4))}px ${FONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const w = ctx.measureText(label).width + p * 4, h = Math.round(U * 2.4) + p * 2;
+      ctx.fillStyle = 'rgba(12,8,20,0.82)';
+      ctx.fillRect(Math.round(pos.x * U - w / 2), Math.round(pos.y * U - h / 2), w, h);
+      ctx.fillStyle = done === tasks.length ? '#7ee787' : '#ffb86b';
+      ctx.fillText(label, Math.round(pos.x * U), Math.round(pos.y * U + 1));
+    }
+
     // onomatopées
     for (const c of comicTexts) {
       const age = t - c.t0;
@@ -1780,7 +1826,8 @@
       const st = document.createElement('span');
       const s = statusOf(a);
       st.className = 'st' + (s === 'Erreur' ? ' err' : (/Écrit|Lit|Lance|Planifie|marche|Orchestre/.test(s) ? ' busy' : ''));
-      st.textContent = s + (a.tool && !a.done && a.id !== MAIN_ID ? ` · ${a.tool}` : '');
+      const u = agentUsage(a.id);
+      st.textContent = s + (a.tool && !a.done && a.id !== MAIN_ID ? ` · ${a.tool}` : '') + (u && u.messages ? ` · ${fmtCost(u.cost)}` : '');
       div.append(sw, nm, st);
       div.addEventListener('mousedown', () => openInspector(a.id));
       li.appendChild(div);
@@ -1805,6 +1852,7 @@
     const calm = !subs.length && !main.bubbles.length && !connection.demoRunning;
     $('#onboarding').classList.toggle('hidden', !calm || onboardingDismissed);
     if (filesDirty) { filesDirty = false; renderFiles(); }
+    if (tasksDirty) { tasksDirty = false; renderTasks(); }
   }
 
   const FILE_ICON = { w: ['✚', 'écrit'], e: ['✎', 'modifié'], r: ['◌', 'lu'] };
@@ -1827,8 +1875,9 @@
       const by = document.createElement('span'); by.className = 'by';
       const sw = document.createElement('i'); sw.style.background = a ? a.color : 'var(--muted)';
       by.append(sw, a ? a.name : 'parti');
+      if (f.added || f.removed) { const st = document.createElement('span'); st.className = 'stat'; const ad = document.createElement('span'); ad.className = 'a'; ad.textContent = ` +${f.added}`; const de = document.createElement('span'); de.className = 'd'; de.textContent = ` −${f.removed}`; st.append(ad, de); by.appendChild(st); }
       li.append(act, path, by);
-      if (a) li.addEventListener('click', () => openInspector(a.id));
+      li.addEventListener('click', () => openDiff(f));
       return li;
     }));
   }
@@ -1888,9 +1937,9 @@
     logEl.scrollTop = logEl.scrollHeight;
   }));
 
-  // Onglets Journal / Fichiers
+  // Onglets Journal / Tâches / Fichiers
   function selectTab(name) {
-    for (const t of ['log', 'files']) {
+    for (const t of ['log', 'tasks', 'files']) {
       const on = t === name;
       $(`#tab-${t}`).classList.toggle('active', on);
       $(`#tab-${t}`).setAttribute('aria-selected', String(on));
@@ -1898,8 +1947,10 @@
     }
     $('#btn-clear-log').classList.toggle('hidden', name !== 'log');
     if (name === 'files') renderFiles();
+    if (name === 'tasks') renderTasks();
   }
   $('#tab-log').addEventListener('click', () => selectTab('log'));
+  $('#tab-tasks').addEventListener('click', () => selectTab('tasks'));
   $('#tab-files').addEventListener('click', () => selectTab('files'));
 
   // Notifications
@@ -1912,6 +1963,179 @@
     while (box.children.length > 3) box.firstChild.remove();
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, 3200);
   }
+
+  /* ---------- « Claude a fini » / « Claude attend ta réponse » ---------- */
+  const notify = {
+    on: (() => { try { return localStorage.getItem('agent-room:notify') !== 'off'; } catch { return true; } })(),
+    unread: 0,
+    baseTitle: document.title,
+    audio: null
+  };
+  function paintBell() {
+    const b = $('#btn-notify');
+    b.textContent = notify.on ? '🔔' : '🔕';
+    b.setAttribute('aria-pressed', String(notify.on));
+  }
+  function chime(kind) {
+    try {
+      notify.audio = notify.audio || new (window.AudioContext || window.webkitAudioContext)();
+      const ac = notify.audio;
+      const notes = kind === 'waiting' ? [660, 880, 660] : [523, 784];
+      notes.forEach((f, i) => {
+        const o = ac.createOscillator(), gn = ac.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        const t0 = ac.currentTime + i * 0.16;
+        gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        o.connect(gn).connect(ac.destination); o.start(t0); o.stop(t0 + 0.3);
+      });
+    } catch { /* audio indisponible */ }
+  }
+  function notifyUser(kind, text) {
+    toast(kind === 'waiting' ? `⏳ Claude attend ta réponse : ${text}` : '✅ Claude a terminé.', kind === 'waiting' ? 'err' : 'ok');
+    if (!notify.on) return;
+    chime(kind);
+    if (document.hidden) {
+      notify.unread++;
+      document.title = `(${notify.unread}) ${kind === 'waiting' ? 'Claude attend' : 'Claude a fini'} · ${notify.baseTitle}`;
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(kind === 'waiting' ? 'Claude attend ta réponse' : 'Claude a terminé', { body: shortText(text, 120), tag: 'agent-room', silent: true });
+        }
+      } catch { /* notifications bloquées */ }
+    }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { notify.unread = 0; document.title = notify.baseTitle; } });
+  function toggleNotify() {
+    notify.on = !notify.on;
+    try { localStorage.setItem('agent-room:notify', notify.on ? 'on' : 'off'); } catch { /* stockage indisponible */ }
+    paintBell();
+    if (notify.on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+    toast(notify.on ? '🔔 Tu seras prévenu quand Claude finit ou attend ta réponse.' : '🔕 Notifications coupées.');
+  }
+  $('#btn-notify').addEventListener('click', toggleNotify);
+  paintBell();
+
+  /* ---------- Plan de Claude (tâches) ---------- */
+  function applyTask(t) {
+    if (t.op === 'add' && t.subject) tasks.push({ content: t.subject, status: 'pending' });
+    else if (t.op === 'update') {
+      const i = Number(t.id) - 1; // Claude Code numérote ses tâches 1, 2, 3…
+      const item = tasks[i] || tasks.find(x => x.content === t.subject);
+      if (item) { if (t.status) item.status = t.status; if (t.subject) item.content = t.subject; }
+    }
+    if (tasks.length > 50) tasks = tasks.slice(-50);
+    tasksDirty = true;
+  }
+  function renderTasks() {
+    const done = tasks.filter(t => t.status === 'completed').length;
+    $('#tasks-count').textContent = tasks.length ? `${done}/${tasks.length}` : '0';
+    $('#tasks-bar').style.width = tasks.length ? `${Math.round(done / tasks.length * 100)}%` : '0%';
+    const current = tasks.find(t => t.status === 'in_progress');
+    $('#tasks-summary').textContent = !tasks.length ? 'Le plan de Claude s\'affichera ici dès qu\'il fera une liste de tâches.'
+      : done === tasks.length ? `Tout est fait (${done} tâches).` : `${done} sur ${tasks.length} faites${current ? ` · en cours : ${shortText(current.content, 60)}` : ''}`;
+    $('#task-list').replaceChildren(...tasks.map(t => {
+      const li = document.createElement('li'); li.className = t.status;
+      const box = document.createElement('span'); box.className = 'box'; box.textContent = t.status === 'completed' ? '✓' : '';
+      const txt = document.createElement('span'); txt.className = 'txt'; txt.textContent = t.content;
+      li.append(box, txt);
+      return li;
+    }));
+  }
+
+  /* ---------- Diff d'un fichier ---------- */
+  function openDiff(f) {
+    const a = agents.get(f.diffBy || f.agentId);
+    $('#diff-title').textContent = f.path;
+    $('#diff-meta').textContent = `${FILE_ICON[f.kind][1]} par ${a ? a.name : 'un agent parti'} · +${f.added || 0} −${f.removed || 0} · ${f.count} action(s)`;
+    const body = $('#diff-body');
+    if (!f.diff) {
+      const span = document.createElement('span'); span.className = 'sep';
+      span.textContent = f.kind === 'r' ? 'Fichier seulement lu : aucun changement.' : 'Aucun aperçu disponible pour ce changement.';
+      body.replaceChildren(span);
+    } else {
+      body.replaceChildren(...f.diff.split('\n').slice(0, 800).map(l => {
+        const span = document.createElement('span');
+        span.className = l === '@@' ? 'sep' : l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : '';
+        span.textContent = l === '@@' ? '···' : l;
+        return span;
+      }));
+    }
+    $('#diff').showModal();
+  }
+  $('#diff-close').addEventListener('click', () => $('#diff').close());
+  $('#diff').addEventListener('click', e => { if (e.target === $('#diff')) $('#diff').close(); });
+
+  /* ---------- Coût ---------- */
+  const fmtTokens = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n));
+  const fmtCost = c => (c >= 100 ? `$${c.toFixed(0)}` : c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(3)}`);
+  function tokensOf(t) { return t.input + t.output + t.cacheRead + t.cacheWrite; }
+  function setUsage(u) {
+    usageState = u;
+    if (!u || !u.total || !u.total.messages) return;
+    $('#c-cost').textContent = fmtCost(u.total.cost);
+    $('#cost-box').title = `${fmtTokens(tokensOf(u.total))} tokens (entrée ${fmtTokens(u.total.input)}, sortie ${fmtTokens(u.total.output)}, cache lu ${fmtTokens(u.total.cacheRead)}, cache écrit ${fmtTokens(u.total.cacheWrite)}) · estimation au tarif public de l'API`;
+    treeDirty = true;
+    if (selectedId) inspectorDirty = true;
+  }
+  const agentUsage = id => (usageState && usageState.agents && usageState.agents[id]) || null;
+
+  /* ---------- Ambiance fun / pro ---------- */
+  function applyMode(mode, fromServer) {
+    roomMode = mode === 'pro' ? 'pro' : 'fun';
+    document.body.classList.toggle('pro', roomMode === 'pro');
+    $('#mode-select').value = roomMode;
+    if (roomMode === 'pro') {
+      endingMode = 'cafe';
+      for (const a of agents.values()) a.retireAt = 0;
+    } else {
+      endingMode = $('#ending-select').value === 'cafe' ? 'cafe' : 'pompe';
+    }
+    if (!fromServer && connection.live) {
+      api('/api/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: roomMode }) }).catch(() => {});
+    }
+  }
+  $('#mode-select').addEventListener('change', e => applyMode(e.target.value, false));
+
+  /* ---------- Export du journal ---------- */
+  async function openExport() {
+    const list = $('#export-days');
+    list.replaceChildren();
+    try {
+      const r = await api('/api/history');
+      const data = await r.json();
+      if (!data.enabled) throw new Error('journal sur disque désactivé (AGENT_ROOM_HISTORY=0)');
+      if (!data.days.length) throw new Error('aucun événement enregistré pour le moment');
+      for (const d of data.days.slice().reverse()) {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = `${d.day} · ${d.bytes > 1e6 ? (d.bytes / 1e6).toFixed(1) + ' Mo' : Math.ceil(d.bytes / 1e3) + ' Ko'}`;
+        li.appendChild(label);
+        for (const fmt of ['json', 'csv']) {
+          const b = document.createElement('button'); b.className = 'copy-btn'; b.type = 'button'; b.textContent = fmt.toUpperCase();
+          b.addEventListener('click', () => download(d.day, fmt));
+          li.appendChild(b);
+        }
+        list.appendChild(li);
+      }
+    } catch (err) {
+      const li = document.createElement('li'); li.textContent = connection.live ? `Export indisponible : ${err.message}.` : 'Export indisponible en mode démo (serveur non joint).';
+      list.appendChild(li);
+    }
+    $('#export').showModal();
+  }
+  async function download(day, fmt) {
+    try {
+      const r = await api(`/api/export?day=${encodeURIComponent(day)}&format=${fmt}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement('a');
+      a.href = url; a.download = `agent-room-${day}.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) { toast(`Export impossible : ${err.message}`, 'err'); }
+  }
+  $('#btn-export').addEventListener('click', openExport);
+  $('#export-close').addEventListener('click', () => $('#export').close());
 
   function openInspector(id) {
     selectedId = id;
@@ -1930,7 +2154,8 @@
     $('#i-swatch').style.background = a.color; $('#i-swatch').style.color = a.color;
     $('#i-name').textContent = a.name;
     const role = $('#i-role'); role.textContent = a.role; role.style.color = ROLE_COLORS[a.role] || a.color;
-    $('#i-status').textContent = `${statusOf(a)} · depuis ${fmtTime(a.spawnedAt)}`;
+    const u = agentUsage(a.id);
+    $('#i-status').textContent = `${statusOf(a)} · depuis ${fmtTime(a.spawnedAt)}${u && u.messages ? ` · ${fmtTokens(tokensOf(u))} tokens · ~${fmtCost(u.cost)}` : ''}`;
     $('#i-prompt').textContent = a.id === MAIN_ID
       ? `Orchestrateur principal. ${[...agents.values()].filter(x => x.id !== MAIN_ID).length} sous-agent(s) dans la chambre.`
       : (a.prompt || a.task || '(aucun prompt transmis)');
@@ -2033,8 +2258,13 @@
     ws.onmessage = msg => {
       let data;
       try { data = JSON.parse(msg.data); } catch { return; }
-      if (data.kind === 'hello') replayHistory(data.history || []);
-      else if (data.kind === 'event') handleEvent(data.event);
+      if (data.kind === 'hello') {
+        if (data.mode && !new URLSearchParams(location.search).get('mode')) applyMode(data.mode, true);
+        replayHistory(data.history || []);
+        setUsage(data.usage);
+      } else if (data.kind === 'event') handleEvent(data.event);
+      else if (data.kind === 'usage') setUsage(data.usage);
+      else if (data.kind === 'config' && data.mode) applyMode(data.mode, true);
     };
     ws.onclose = async () => {
       const wasLive = connection.live;
@@ -2165,6 +2395,7 @@
     else if (k === 's') spawnTestAgent();
     else if (k === 'r') resetAll();
     else if (k === 'f') toggleFullscreen();
+    else if (k === 'n') toggleNotify();
     else if (k === '?' || k === 'h') openHelp();
     else if (k === 'w') {
       const ws = $('#world-select');
@@ -2205,13 +2436,16 @@
     endingMode = fin === 'cafe' ? 'cafe' : 'pompe';
     es.value = endingMode;
     es.addEventListener('change', () => {
-      endingMode = es.value;
-      savePref('fin', endingMode);
+      endingMode = roomMode === 'pro' ? 'cafe' : es.value;
+      savePref('fin', es.value);
       for (const a of agents.values()) {
         if (endingMode === 'pompe') { if (a.done && !a.dying && a.activity === 'coffee') a.retireAt = now() + RETIRE_DELAY; }
         else a.retireAt = 0;
       }
     });
+    // ?mode=pro dans l'URL l'emporte (écran de démo client…) ; sinon le réglage du serveur arrive avec "hello".
+    const urlMode = new URLSearchParams(location.search).get('mode');
+    applyMode(urlMode === 'pro' ? 'pro' : 'fun', true);
   }
 
   /* ================================================================

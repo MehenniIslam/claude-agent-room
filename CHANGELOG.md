@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.0
+
+### Économiser des tokens
+- **Conseiller tokens** : au premier démarrage de Claude Code dans un projet, Claude propose une fois une sélection d'outils vérifiés (règles CLAUDE.md, Caveman, Context7 ; Context Mode et Token Savior pour les gros dépôts), avec gain mesuré et risque de chacun.
+- Sélection issue de bancs d'essai publics et d'avis, puis vérification à la main de chaque dépôt (licence, activité, hooks, serveurs MCP, commit relu). Écartés : RTK, claude-mem, alexgreensh/token-optimizer, claude-context.
+- `advisor` : liste, `check` (le dépôt a-t-il changé depuis la vérification ?), `apply` (liste fermée, confirmation si un dépôt a changé, jamais de `curl | sh`), `on` / `off` / `reset`. Règles CLAUDE.md embarquées, insérées entre balises avec sauvegarde.
+
+### Pour le vibecoder
+- **Notifications** : son, titre d'onglet et notification système quand Claude a fini ou attend ta réponse (hooks `Stop` et `Notification`) ; cloche ou touche `N` ; le terminal sonne.
+- **Plan de Claude** : onglet Tâches (TodoWrite, TaskCreate, TaskUpdate) avec barre de progression, et le tableau de la chambre affiche les cases du plan.
+- **Diffs** : clic sur un fichier modifié = lignes ajoutées et retirées en couleur, `+/−` dans la liste.
+- **Coût** : tokens et prix estimé (tarif public de l'API, cache compris) pour la session et par agent, lus dans les transcripts de Claude Code.
+- **Installation guidée** : `claude-agent-room setup` (hooks, conseiller, règles, ambiance, puis la chambre s'ouvre).
+
+### Pour l'entreprise
+- **Mode pro** : ambiance sobre (pas de fusil à pompe ni de blagues), partagée par tous les écrans et mémorisée ; `?mode=pro` pour un écran précis.
+- **Journal sur disque** : un fichier par jour dans `~/.claude/agent-room/history/` (50 Mo max/jour, 14 jours par défaut), relu au redémarrage ; export JSON ou CSV (protégé contre l'injection de formules).
+- Réglages persistants dans `~/.claude/agent-room/config.json` (`AGENT_ROOM_MODE`, `AGENT_ROOM_HISTORY`, `AGENT_ROOM_RETENTION_DAYS`).
+- Paquet prêt pour npm (`prepublishOnly` lance les tests).
+
+### Qualité
+- 28 tests (notifications, plan, diffs, coût sur transcript réel simulé, journal et export, ambiance, conseiller).
+
 ## 1.2.0
 
 ### Interface

@@ -1,0 +1,104 @@
+{
+  "reviewedAt": "2026-11-08",
+  "sources": [
+    "https://computingforgeeks.com/reduce-claude-code-token-usage-tools/",
+    "https://repowise.dev/blog/comparisons/best-tools-reduce-claude-code-token-usage",
+    "https://buildtolaunch.substack.com/p/claude-code-token-optimization"
+  ],
+  "policy": "Liste fermée, vérifiée à la main : licence, activité, contenu des hooks et des serveurs MCP, commit relu. Rien ne s'installe sans un oui explicite ; aucune commande `curl | sh` ; pas de clé API demandée.",
+  "tools": [
+    {
+      "id": "rules",
+      "name": "Règles d'économie (CLAUDE.md)",
+      "pack": "essentiel",
+      "what": "6 règles courtes dans le CLAUDE.md du projet : relire seulement si le fichier a changé, réponses concises, pas de formules creuses, vérifier au lieu de deviner.",
+      "bestFor": "Tous les projets, surtout quand Claude écrit beaucoup.",
+      "savings": "-40 % sur le banc d'essai computingforgeeks (une tâche, Sonnet 4.5)",
+      "repo": "drona23/claude-token-efficient",
+      "stars": 6153,
+      "license": "MIT",
+      "reviewedSha": "0d30a6db75af",
+      "runsCode": false,
+      "network": false,
+      "risks": ["Aucun code exécuté : le texte est embarqué dans claude-agent-room (copie relue, licence MIT), rien n'est téléchargé.", "Ajoute quelques tokens d'entrée à chaque tour : utile surtout quand les réponses sont longues."],
+      "install": { "type": "rules", "file": "advisor/rules/token-efficient.md" }
+    },
+    {
+      "id": "caveman",
+      "name": "Caveman",
+      "pack": "essentiel",
+      "what": "Compresse la prose de Claude (moins de phrases, mêmes termes techniques, code et erreurs intacts).",
+      "bestFor": "Sessions bavardes, revues de code, questions-réponses.",
+      "savings": "-37 à -38 % (43 % de tokens de sortie en moins) sur le banc d'essai computingforgeeks",
+      "repo": "JuliusBrussee/caveman",
+      "stars": 118166,
+      "license": "Apache-2.0",
+      "reviewedSha": "c310c9d300df",
+      "runsCode": true,
+      "network": false,
+      "risks": ["Ajoute des hooks SessionStart et SubagentStart qui lancent un script Node local du plugin.", "Les réponses deviennent très laconiques : à désactiver si tu préfères des explications détaillées."],
+      "install": { "type": "plugin", "plugin": "caveman", "marketplace": "JuliusBrussee/caveman" }
+    },
+    {
+      "id": "context7",
+      "name": "Context7",
+      "pack": "essentiel",
+      "what": "Donne à Claude la documentation à jour des bibliothèques (React, Next.js, Tailwind…) : moins d'essais ratés et de corrections.",
+      "bestFor": "Créer un site ou une app avec des frameworks récents.",
+      "savings": "Non chiffré : évite surtout les allers-retours dus à des API obsolètes",
+      "repo": "upstash/context7",
+      "stars": 64328,
+      "license": "MIT",
+      "reviewedSha": "078c0c731d19",
+      "runsCode": false,
+      "network": true,
+      "risks": ["Serveur MCP distant (mcp.context7.com, Upstash) : les noms de bibliothèques et les sujets recherchés y sont envoyés, pas ton code.", "Ne mets pas de secrets dans les questions de documentation."],
+      "install": { "type": "plugin", "plugin": "context7", "marketplace": "upstash/context7" }
+    },
+    {
+      "id": "context-mode",
+      "name": "Context Mode",
+      "pack": "gros-projets",
+      "what": "Range les grosses sorties d'outils (logs, captures de navigateur, gros fichiers) dans une base locale et ne renvoie qu'un résumé à Claude.",
+      "bestFor": "Projets avec beaucoup de logs, de tests ou de navigation web automatisée.",
+      "savings": "50 à 90 % annoncés quand les outils produisent beaucoup de texte (chiffre de l'éditeur, non mesuré indépendamment)",
+      "repo": "mksglu/context-mode",
+      "stars": 33649,
+      "license": "Elastic-2.0",
+      "reviewedSha": "ee0a1f6058f6",
+      "runsCode": true,
+      "network": false,
+      "risks": ["Exécute du code dans un bac à sable local : surface plus large que les autres.", "Licence Elastic 2.0 : usage interne libre, revente en service interdite."],
+      "install": { "type": "plugin", "plugin": "context-mode", "marketplace": "mksglu/context-mode" }
+    },
+    {
+      "id": "token-savior",
+      "name": "Token Savior",
+      "pack": "gros-projets",
+      "what": "Remplace les lectures de fichiers entiers par une navigation symbole par symbole (fonctions, classes).",
+      "bestFor": "Gros dépôts typés (TypeScript, Python typé, Go, Rust).",
+      "savings": "-43 % sur le banc d'essai computingforgeeks (le meilleur score mesuré)",
+      "repo": "Mibayy/token-savior",
+      "stars": 1212,
+      "license": "MIT",
+      "reviewedSha": "770e055defd1",
+      "runsCode": true,
+      "network": false,
+      "risks": ["Serveur MCP Python local, à installer toi-même dans un environnement virtuel (version épinglée ci-dessous).", "Peu utile sur un petit projet ou du JavaScript non typé ; le profil complet ajoute ~11 000 tokens de description d'outils."],
+      "install": {
+        "type": "manual",
+        "steps": [
+          "python -m venv ~/.claude/agent-room/venv-token-savior",
+          "~/.claude/agent-room/venv-token-savior/bin/pip install 'token-savior-recall[mcp]==4.24.0'",
+          "claude mcp add token-savior --scope user -e TOKEN_SAVIOR_PROFILE=core -e WORKSPACE_ROOTS=<chemin du projet> -- ~/.claude/agent-room/venv-token-savior/bin/token-savior"
+        ]
+      }
+    }
+  ],
+  "notRecommended": [
+    { "name": "RTK", "repo": "rtk-ai/rtk", "why": "Résultats indépendants mitigés : aucun gain mesuré par computingforgeeks, coût +7,6 % au nouveau test de JetBrains ; installation par `curl | sh`." },
+    { "name": "claude-mem", "repo": "thedotmack/claude-mem", "why": "Mémoire persistante entre sessions : pas de gain chiffré, et des données de projet stockées durablement." },
+    { "name": "alexgreensh/token-optimizer", "repo": "alexgreensh/token-optimizer", "why": "Licence non commerciale (PolyForm Noncommercial) : interdit en entreprise sans licence." },
+    { "name": "claude-context", "repo": "zilliztech/claude-context", "why": "Demande des clés OpenAI et Milvus payantes ; disproportionné pour un site." }
+  ]
+}

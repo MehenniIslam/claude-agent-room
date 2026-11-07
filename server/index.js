@@ -17,18 +17,24 @@ const express = require('express');
 const { WebSocketServer, WebSocket } = require('ws');
 const { HookNormalizer, MAIN_ID } = require('./normalize');
 const { createGuard, createRateLimiter, securityHeaders } = require('./security');
+const { createUsageTracker } = require('./usage');
+const { createHistory } = require('./history');
+const { loadConfig, saveConfig } = require('./config');
 const { redact } = require('../bridge/claude-hook.js');
 const demo = require('../public/demo-scenario.js');
 const { version } = require('../package.json');
 
 const HISTORY_MAX = 400;
 const MAX_CLIENTS = 32;
-const TYPES = new Set(['SUBAGENT_SPAWN', 'TOOL_START', 'TOOL_END', 'AGENT_MESSAGE', 'SUBAGENT_COMPLETE', 'ERROR', 'RESET']);
+const TYPES = new Set(['SUBAGENT_SPAWN', 'TOOL_START', 'TOOL_END', 'AGENT_MESSAGE', 'SUBAGENT_COMPLETE', 'ERROR', 'NOTIFY', 'RESET']);
 // Seuls ces champs sont conservés, tronqués à la longueur indiquée.
 const FIELDS = {
   agentId: 120, parentId: 120, targetAgentId: 120, role: 40, name: 60, tool: 80,
-  message: 4000, prompt: 8000, file: 500, source: 40, sessionId: 120
+  message: 4000, prompt: 8000, file: 500, source: 40, sessionId: 120, kind: 20, diff: 6500
 };
+const REDACTED = new Set(['message', 'prompt', 'file', 'diff']);
+const TODO_STATUS = new Set(['pending', 'in_progress', 'completed']);
+const str = (v, n) => (v == null ? undefined : redact(String(v).slice(0, n)));
 
 function sanitize(raw, seq) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('événement invalide : objet JSON attendu');
@@ -38,10 +44,18 @@ function sanitize(raw, seq) {
   for (const [key, max] of Object.entries(FIELDS)) {
     if (raw[key] == null || raw[key] === '') continue;
     const value = String(raw[key]).slice(0, max);
-    e[key] = key === 'message' || key === 'prompt' || key === 'file' ? redact(value) : value;
+    e[key] = REDACTED.has(key) ? redact(value) : value;
   }
   e.agentId = e.agentId || MAIN_ID;
   if (typeof raw.success === 'boolean') e.success = raw.success;
+  for (const k of ['added', 'removed']) if (Number.isFinite(raw[k])) e[k] = Math.max(0, Math.min(1e6, Math.round(raw[k])));
+  if (Array.isArray(raw.todos)) {
+    e.todos = raw.todos.slice(0, 50).filter(t => t && typeof t === 'object')
+      .map(t => ({ content: str(t.content, 200) || '', status: TODO_STATUS.has(t.status) ? t.status : 'pending' }));
+  }
+  if (raw.task && typeof raw.task === 'object' && (raw.task.op === 'add' || raw.task.op === 'update')) {
+    e.task = { op: raw.task.op, id: str(raw.task.id, 20), subject: str(raw.task.subject, 200), status: TODO_STATUS.has(raw.task.status) ? raw.task.status : undefined };
+  }
   e.id = seq;
   return e;
 }
@@ -65,29 +79,45 @@ async function probeExisting(port) {
   }
 }
 
-function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
+function createApp({ host = '127.0.0.1', token = '', allowedHosts = [], config = loadConfig(), historyDir, usageRoot, persistConfig = true } = {}) {
   const guard = createGuard({ host, token, allowedHosts });
   const limit = createRateLimiter();
   const normalizer = new HookNormalizer();
   const app = express();
   const server = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
+  const settings = { mode: config.mode };
+  const disk = createHistory({ dir: historyDir, retentionDays: config.retentionDays, enabled: config.history });
 
   let history = [];
   let seq = 0;
   let demoTimers = [];
   const stats = { received: 0, broadcast: 0, rejected: 0 };
 
-  function broadcast(event) {
-    const data = JSON.stringify({ kind: 'event', event });
+  function send(payload) {
+    const data = JSON.stringify(payload);
     for (const client of wss.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
       // Onglet figé ou trop lent : on le coupe plutôt que d'empiler des Mo en mémoire (il se reconnecte seul).
       if (client.bufferedAmount > 8 * 1024 * 1024) { client.terminate(); continue; }
       client.send(data);
     }
+  }
+  function broadcast(event) {
+    send({ kind: 'event', event });
     stats.broadcast++;
   }
+
+  // Coût : les identifiants d'agents de Claude Code sont traduits en agents de la chambre.
+  const usageSnapshot = () => usage.snapshot(ref => normalizer.byAgentRef.get(ref));
+  let usageTimer = null;
+  const usage = createUsageTracker({
+    root: usageRoot,
+    onChange: () => {
+      if (usageTimer) return;
+      usageTimer = setTimeout(() => { usageTimer = null; send({ kind: 'usage', usage: usageSnapshot() }); }, 1000);
+    }
+  });
 
   function emit(raw) {
     const event = sanitize(raw, ++seq);
@@ -97,14 +127,23 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
     } else {
       history.push(event);
       if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
+      if (event.source !== 'demo' && event.source !== 'doctor') disk.append(event);
     }
     broadcast(event);
     return event;
   }
 
   function ingest(body) {
-    if (normalizer.isRawHook(body)) return normalizer.convert(body).map(emit);
+    if (normalizer.isRawHook(body)) {
+      usage.track(body);
+      return normalizer.convert(body).map(emit);
+    }
     return [emit(body)];
+  }
+
+  // Au démarrage, la chambre retrouve les derniers événements du jour (journal sur disque).
+  for (const e of disk.enabled() ? disk.tail(disk.today(), HISTORY_MAX) : []) {
+    try { const ev = sanitize(e, ++seq); if (ev.type !== 'RESET') history.push(ev); } catch { /* ligne invalide ignorée */ }
   }
 
   function stopDemo() {
@@ -123,7 +162,7 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
   });
   app.use(securityHeaders);
 
-  app.get('/api/health', (req, res) => res.json({ ok: true, name: 'claude-agent-room', version, auth: Boolean(guard.token) }));
+  app.get('/api/health', (req, res) => res.json({ ok: true, name: 'claude-agent-room', version, auth: Boolean(guard.token), mode: settings.mode }));
 
   // Le reste de l'API exige le jeton (s'il y en a un) et respecte la limite de débit.
   app.use('/api', (req, res, next) => {
@@ -168,6 +207,29 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
     res.json({ ok: true, clients: wss.clients.size, stats, history });
   });
 
+  app.get('/api/usage', (req, res) => res.json({ ok: true, usage: usageSnapshot() }));
+
+  // Réglage partagé par tous les écrans : ambiance fun / pro (enregistrée dans config.json).
+  app.get('/api/config', (req, res) => res.json({ ok: true, mode: settings.mode }));
+  app.post('/api/config', (req, res) => {
+    const mode = req.body && req.body.mode;
+    if (mode !== 'fun' && mode !== 'pro') return res.status(400).json({ ok: false, error: 'mode attendu : "fun" ou "pro"' });
+    settings.mode = mode;
+    if (persistConfig) { try { saveConfig({ mode }); } catch { /* lecture seule : réglage gardé en mémoire */ } }
+    send({ kind: 'config', mode });
+    res.json({ ok: true, mode });
+  });
+
+  // Journal sur disque : liste des jours et export pour l'audit.
+  app.get('/api/history', (req, res) => res.json({ ok: true, enabled: disk.enabled(), days: disk.days() }));
+  app.get('/api/export', async (req, res, next) => {
+    try {
+      const day = String(req.query.day || disk.today());
+      const format = req.query.format === 'csv' ? 'csv' : 'json';
+      if (!(await disk.exportDay(day, format, res))) res.status(404).json({ ok: false, error: 'Aucun journal pour ce jour' });
+    } catch (err) { next(err); }
+  });
+
   app.use('/api', (req, res) => res.status(404).json({ ok: false, error: 'Route inconnue' }));
 
   app.use(express.static(path.join(__dirname, '..', 'public'), { dotfiles: 'ignore', index: 'index.html' }));
@@ -199,7 +261,7 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
   wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
-    ws.send(JSON.stringify({ kind: 'hello', history, clients: wss.clients.size, version }));
+    ws.send(JSON.stringify({ kind: 'hello', history, clients: wss.clients.size, version, mode: settings.mode, usage: usageSnapshot() }));
     const key = `ws:${req.socket.remoteAddress}:${req.socket.remotePort}`;
     ws.on('message', msg => {
       // Permet aussi d'envoyer des événements directement par WebSocket.
@@ -224,11 +286,14 @@ function createApp({ host = '127.0.0.1', token = '', allowedHosts = [] } = {}) {
   function close() {
     stopDemo();
     clearInterval(heartbeat);
+    disk.close();
+    usage.stop();
+    if (usageTimer) clearTimeout(usageTimer);
     for (const ws of wss.clients) ws.terminate();
     return new Promise(resolve => server.close(() => resolve()));
   }
 
-  return { app, server, wss, guard, emit, close };
+  return { app, server, wss, guard, emit, close, usage, disk, settings };
 }
 
 /** Démarre le serveur. Options : port, host, token, open, allowedHosts. */

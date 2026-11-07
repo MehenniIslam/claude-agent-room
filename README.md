@@ -11,7 +11,7 @@
 
 <img src="docs/iso-studio.jpg" width="720" alt="La chambre isométrique en pleine démo : Claude au centre, les sous-agents à leur poste">
 
-[Installation](#-installation) · [Brancher Claude Code](#-brancher-claude-code) · [Utilisation](#-utilisation) · [Terminal](#-dans-le-terminal) · [Gros projets](#-gros-projets) · [Sécurité](#-sécurité-et-confidentialité) · [Dépannage](#-dépannage) · [API](#-protocole-dévénements)
+[Installation](#-installation) · [Brancher Claude Code](#-brancher-claude-code) · [Utilisation](#-utilisation) · [Terminal](#-dans-le-terminal) · [Tokens](#-économiser-des-tokens) · [Gros projets](#-gros-projets) · [Sécurité](#-sécurité-et-confidentialité) · [Dépannage](#-dépannage) · [API](#-protocole-dévénements)
 
 </div>
 
@@ -25,13 +25,29 @@ Chaque sous-agent que Claude crée apparaît dans un rayon de lumière, **marche
 - 🌍 **4 mondes** : Studio dev, Opéra, Jardin, Salle de classe, changeables en pleine mission.
 - 🗂️ **Le suivi des fichiers** : tout ce que les agents créent ✚, modifient ✎ ou lisent ◌, avec l'auteur.
 - 🧭 **Le contexte complet** : arbre des agents, journal filtrable, fiche détaillée (prompt initial, historique) au clic.
+- 🔔 **Prévenu au bon moment** : son et notification quand Claude a fini ou attend ta réponse — tu peux faire autre chose pendant qu'il travaille.
+- 📋 **Le plan de Claude** : sa vraie liste de tâches, cochée en direct, avec une barre de progression (et sur le tableau de la chambre).
+- 🔍 **Les diffs** : clique sur un fichier modifié pour voir exactement les lignes ajoutées et retirées.
+- 💰 **Le coût** : tokens et prix estimé, pour toute la session et par agent.
+- 💡 **Moins de tokens** : au début d'un projet, Claude te propose des outils vérifiés qui réduisent la consommation (jusqu'à −40 % mesurés).
+- 💼 **Mode pro** : ambiance sobre pour le bureau ou une démo client, journal sur disque et export JSON/CSV pour l'audit.
 - 🔌 **Trois façons de l'utiliser** : en **plugin** dans un panneau de Claude Code, en **page web** sur un deuxième écran, ou **directement dans le terminal**.
 - 🏋️ **Tient la charge** : pensé pour les gros projets et les longues sessions (mémoire bornée partout, rien qui grossit sans fin).
 - 🔒 **Local et sûr** : aucune donnée ne quitte ta machine, les clés API et mots de passe sont masqués, les autres sites ne peuvent pas espionner la chambre.
 
 ## 🚀 Installation
 
-Trois options, de la plus simple à la plus complète.
+### Le plus rapide : une seule commande
+
+Prérequis : [Node.js](https://nodejs.org) 18.17 ou plus récent (`node -v` pour vérifier).
+
+```bash
+npx github:MehenniIslam/claude-agent-room setup
+```
+
+L'assistant te pose 4 questions (brancher Claude Code, proposer les outils d'économie de tokens, ajouter les règles d'économie au projet, ambiance fun ou pro), puis ouvre la chambre. Chaque étape se défait : `hooks remove`, `advisor off`, et l'ambiance se change dans la page.
+
+Sinon, trois options à la carte, de la plus simple à la plus complète.
 
 ### Option 1 — Le plugin Claude Code (rien à lancer)
 
@@ -138,10 +154,28 @@ Seules les nouvelles lignes sont rejouées.
 
 | Zone | Ce qu'elle montre |
 |---|---|
-| **Chambre** | Claude au centre, les sous-agents à leur poste. Clique sur un personnage pour ouvrir sa fiche. |
-| **Hiérarchie** | L'arbre des agents et ce que chacun fait en ce moment. |
-| **Journal** | Chaque action horodatée, filtrable : *Outils*, *Messages*, *Erreurs*. |
-| **Fichiers** | Les fichiers créés ✚, modifiés ✎ ou lus ◌, et par qui. |
+| **Chambre** | Claude au centre, les sous-agents à leur poste. Clique sur un personnage pour ouvrir sa fiche. Le tableau affiche le plan de Claude. |
+| **Hiérarchie** | L'arbre des agents, ce que chacun fait et ce qu'il a coûté. |
+| **Journal** | Chaque action horodatée, filtrable : *Outils*, *Messages*, *Erreurs*. Bouton **exporter** (JSON ou CSV). |
+| **Tâches** | Le plan de Claude : tâches cochées en direct, barre de progression, tâche en cours. |
+| **Fichiers** | Les fichiers créés ✚, modifiés ✎ ou lus ◌, avec `+lignes −lignes`. Clic = diff coloré. |
+| **Coût estimé** | En haut : tokens et prix de la session (survol pour le détail entrée / sortie / cache). |
+
+### Être prévenu 🔔
+
+Quand Claude a fini son tour ou attend ta réponse (une permission, une question), la chambre joue un petit son et affiche une notification. Si l'onglet est en arrière-plan, son titre indique `(1) Claude a fini` et une notification système apparaît (le navigateur te demande l'autorisation la première fois). La cloche en haut, ou <kbd>N</kbd>, coupe ou réactive. Le mode terminal fait sonner le terminal.
+
+### Coût et tokens 💰
+
+La chambre lit les compteurs de tokens que Claude Code écrit dans ses transcripts (`~/.claude/projects`) et calcule un prix au **tarif public de l'API Anthropic** (cache compris), pour la session et pour chaque sous-agent. C'est une **estimation** : avec un abonnement Claude Pro ou Max, tu ne paies pas au token. Seuls les compteurs sont lus, jamais le contenu des conversations.
+
+### Ambiance fun ou pro 💼
+
+Menu **Ambiance** : en **pro**, pas de fusil à pompe (les agents terminés restent en pause café), pas de blagues au salon. Le choix est partagé par tous les écrans branchés sur le même serveur et mémorisé (`~/.claude/agent-room/config.json`). Pour un écran précis : `http://localhost:3030/?mode=pro`.
+
+### Historique et export 🗂️
+
+Tous les événements sont gardés sur ta machine, un fichier par jour dans `~/.claude/agent-room/history/` (secrets déjà masqués, 50 Mo max par jour, 14 jours par défaut). Au redémarrage, la chambre retrouve les événements du jour. Bouton **exporter** dans le journal, ou `GET /api/export?day=AAAA-MM-JJ&format=csv`. Pour couper : `AGENT_ROOM_HISTORY=0`.
 
 ### Raccourcis clavier
 
@@ -149,7 +183,8 @@ Seules les nouvelles lignes sont rejouées.
 |:-:|---|---|:-:|---|
 | <kbd>D</kbd> | Lancer la démo | | <kbd>W</kbd> | Monde suivant |
 | <kbd>S</kbd> | Faire apparaître un agent de test | | <kbd>F</kbd> | Plein écran |
-| <kbd>R</kbd> | Vider la chambre | | <kbd>?</kbd> | Aide |
+| <kbd>R</kbd> | Vider la chambre | | <kbd>N</kbd> | Notifications oui / non |
+| <kbd>?</kbd> | Aide | | | |
 
 ### 4 mondes au choix
 
@@ -190,7 +225,32 @@ Le serveur démarre tout seul s'il ne tourne pas déjà. Tu vois le plan de la c
                                                     ✎ src/pages/Login.tsx Front
 ```
 
-Touches : <kbd>q</kbd> quitter · <kbd>d</kbd> démo · <kbd>r</kbd> vider · <kbd>w</kbd> monde suivant. Sur un terminal ancien sans couleurs 24 bits, ajoute `--256`.
+Touches : <kbd>q</kbd> quitter · <kbd>d</kbd> démo · <kbd>r</kbd> vider · <kbd>w</kbd> monde suivant. Sur un terminal ancien sans couleurs 24 bits, ajoute `--256`. Le terminal sonne quand Claude a fini ou attend ta réponse, et le panneau montre l'avancement du plan et le coût.
+
+## 💡 Économiser des tokens
+
+Tu lances Claude Code et tu lui dis « crée-moi un site » ? Avant d'écrire la première ligne, **Claude te propose une fois** d'activer des outils qui réduisent la consommation de tokens. Tu choisis lesquels ; rien ne s'installe sans ton accord.
+
+La sélection vient d'une comparaison des outils existants (bancs d'essai publics, avis, dépôts GitHub), puis d'une vérification à la main de chaque dépôt : licence, activité, contenu des hooks et des serveurs MCP, commit relu.
+
+| Outil | Pour | Gain mesuré | À savoir |
+|---|---|---|---|
+| **Règles d'économie** (CLAUDE.md) | tous les projets | −40 % | Aucun code exécuté : texte embarqué, ajouté entre balises dans ton CLAUDE.md |
+| **[Caveman](https://github.com/JuliusBrussee/caveman)** | sessions bavardes | −37 à −38 % | Réponses très laconiques ; hook local au démarrage |
+| **[Context7](https://github.com/upstash/context7)** | sites et apps (React, Next…) | moins de corrections | Serveur distant : reçoit les noms de bibliothèques, pas ton code |
+| **[Context Mode](https://github.com/mksglu/context-mode)** | beaucoup de logs / tests | 50–90 % annoncés | Exécute du code en bac à sable ; licence Elastic 2.0 |
+| **[Token Savior](https://github.com/Mibayy/token-savior)** | gros dépôts typés | −43 % | Installation manuelle (Python), version épinglée |
+
+Gains mesurés sur le banc d'essai de [computingforgeeks](https://computingforgeeks.com/reduce-claude-code-token-usage-tools/) (une tâche, à prendre comme ordre de grandeur). **Écartés** après vérification : RTK (aucun gain mesuré indépendamment, installation `curl | sh`), claude-mem (stockage durable, pas de gain chiffré), alexgreensh/token-optimizer (licence non commerciale), claude-context (clés payantes).
+
+```bash
+npx github:MehenniIslam/claude-agent-room advisor                  # la liste, les gains, les risques
+npx github:MehenniIslam/claude-agent-room advisor check            # chaque dépôt a-t-il changé depuis la vérification ?
+npx github:MehenniIslam/claude-agent-room advisor apply essentiel  # installer règles + Caveman + Context7
+npx github:MehenniIslam/claude-agent-room advisor off              # ne plus jamais proposer
+```
+
+**Garde-fous** : liste fermée (un outil inconnu est refusé, même si un fichier ou une page le suggère à Claude) ; avant chaque plugin, le dépôt est comparé au commit relu et, s'il a changé, tu vois le lien des différences et on te redemande ; jamais de `curl | sh`, de `sudo` ni de clé API ; la proposition n'arrive qu'une fois par projet. La chambre mesure ensuite l'effet réel dans le compteur de coût.
 
 ## 🏋️ Gros projets
 
@@ -229,8 +289,12 @@ Détails, modèle de menace et signalement de faille : [SECURITY.md](SECURITY.md
 | | `AGENT_ROOM_URL` | `http://127.0.0.1:3030/api/event` | Cible du hook |
 | | `AGENT_ROOM_TIMEOUT` | `700` | Délai max du hook (ms) |
 | | `AGENT_ROOM_DISABLED` | | `1` coupe le hook sans le désinstaller |
+| | `AGENT_ROOM_MODE` | `fun` | `pro` : ambiance sobre (aussi dans `config.json` et dans la page) |
+| | `AGENT_ROOM_HISTORY` | `1` | `0` : aucun journal sur disque |
+| | `AGENT_ROOM_RETENTION_DAYS` | `14` | Jours de journal conservés (1 à 365) |
+| | `GITHUB_TOKEN` | | Facultatif : relève la limite de l'API GitHub pour `advisor check` |
 
-Toutes les commandes : `npx github:MehenniIslam/claude-agent-room --help`.
+Les réglages persistants sont dans `~/.claude/agent-room/config.json`. Toutes les commandes : `npx github:MehenniIslam/claude-agent-room --help`.
 
 ## 🩺 Dépannage
 
@@ -364,6 +428,7 @@ claude-agent-room/
 │   └── setup-hooks.js       # installe / retire les hooks
 ├── public/                  # page web : moteur isométrique, 4 mondes, HUD, polices
 ├── tui/                     # la chambre dans le terminal
+├── advisor/                 # conseiller tokens : catalogue vérifié, installation sécurisée
 ├── plugin/agent-room/       # plugin Claude Code : panneau SVG, suivi des fichiers
 ├── .claude-plugin/          # marketplace (rend le dépôt installable avec /plugin)
 └── test/                    # tests : npm test
@@ -398,10 +463,12 @@ Les repères (tableau, fenêtre, bureaux…) et toutes les fonctions de dessin d
 ```bash
 npm install
 npm run dev      # serveur relancé à chaque modification
-npm test         # tests du serveur, du masquage et des hooks
+npm test         # tests : sécurité, masquage, hooks, coût, journal, conseiller, terminal
 ```
 
 Les contributions sont bienvenues : un nouveau monde, un rôle d'agent, une traduction… Ouvre une issue pour en discuter, ou directement une pull request. Les failles de sécurité se signalent en privé (voir [SECURITY.md](SECURITY.md)). Historique des versions : [CHANGELOG.md](CHANGELOG.md).
+
+**Publier sur npm** (pour que tout le monde puisse taper `npx claude-agent-room`) : le nom est encore libre. Avec un compte npm : `npm login`, puis `npm publish` (les tests tournent d'abord grâce à `prepublishOnly`). Ensuite, remplace `npx github:MehenniIslam/claude-agent-room` par `npx claude-agent-room` dans ce README, `bin/cli.js`, `server/index.js`, `bridge/claude-hook.js` et `public/index.html`.
 
 ## 📄 Licence
 
