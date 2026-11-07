@@ -27,7 +27,7 @@
     "hooks:remove": "node bin/cli.js hooks remove",
     "hooks:status": "node bin/cli.js hooks status",
     "watch:transcript": "node bin/cli.js watch",
-    "test": "node --test test/"
+    "test": "node --test test/bridge.test.js test/server.test.js"
   },
   "keywords": [
     "claude",

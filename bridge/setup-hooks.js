@@ -35,7 +35,7 @@ function settingsPathFor(project) {
 
 // Barres obliques partout : la commande marche aussi bien dans cmd, PowerShell que bash.
 function commandFor(hookPath) {
-  return `node "${hookPath.split(path.sep).join('/')}"`;
+  return `node "${String(hookPath).replace(/\\/g, '/')}"`;
 }
 
 function load(settingsPath) {
