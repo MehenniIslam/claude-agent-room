@@ -16,6 +16,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { t } = require('../bin/i18n');
 
 const MARKER = 'claude-hook.js';
 // Événements avec matcher (outils) et sans matcher (cycle de vie).
@@ -45,10 +46,10 @@ function load(settingsPath) {
   if (!txt) return {};
   try {
     const data = JSON.parse(txt);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('objet JSON attendu');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(t('hooks.jsonObject'));
     return data;
   } catch (e) {
-    throw new Error(`${settingsPath} n'est pas un JSON valide (${e.message}). Corrige-le avant de relancer.`);
+    throw new Error(t('hooks.badJson', { file: settingsPath, why: e.message }));
   }
 }
 
@@ -104,9 +105,9 @@ function run(argv = process.argv.slice(2)) {
 
   if (args.has('--status')) {
     const found = isInstalled(settings);
-    if (found.length) console.log(`✅ Hooks installés dans ${settingsPath} (${found.join(', ')})`);
-    else console.log(`○ Aucun hook claude-agent-room dans ${settingsPath}`);
-    console.log(fs.existsSync(INSTALLED_HOOK) ? `   Script : ${INSTALLED_HOOK}` : '   Script du hook absent de ~/.claude/agent-room/');
+    if (found.length) console.log(t('hooks.installedIn', { file: settingsPath, events: found.join(', ') }));
+    else console.log(t('hooks.none', { file: settingsPath }));
+    console.log(fs.existsSync(INSTALLED_HOOK) ? t('hooks.script', { file: INSTALLED_HOOK }) : t('hooks.scriptMissing'));
     return found.length > 0;
   }
 
@@ -121,18 +122,18 @@ function run(argv = process.argv.slice(2)) {
   if (fs.existsSync(settingsPath)) {
     const bak = `${settingsPath}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
     fs.copyFileSync(settingsPath, bak);
-    console.log(`💾 Sauvegarde : ${bak}`);
+    console.log(t('hooks.backup', { file: bak }));
   }
   writeAtomic(settingsPath, out);
 
   if (remove) {
-    console.log(`🧹 Hooks claude-agent-room retirés de ${settingsPath}`);
+    console.log(t('hooks.removed', { file: settingsPath }));
   } else {
-    console.log(`✅ Hooks installés dans ${settingsPath}`);
-    console.log(`   Commande   : ${command}`);
-    console.log(`   Événements : ${ALL_EVENTS.join(', ')}`);
-    console.log('\n   1) Lance la chambre : npm start   (http://localhost:3030)');
-    console.log('   2) Relance Claude Code (ou /hooks pour vérifier) et donne-lui une tâche avec des sous-agents.');
+    console.log(t('hooks.installed', { file: settingsPath }));
+    console.log(t('hooks.command', { cmd: command }));
+    console.log(t('hooks.events', { events: ALL_EVENTS.join(', ') }));
+    console.log(`\n${t('hooks.next1')}`);
+    console.log(t('hooks.next2'));
   }
   return true;
 }

@@ -13,6 +13,10 @@
  * quelque chose a changé ; état borné (40 agents, 200 lignes de journal, 100 fichiers).
  */
 const WebSocket = require('ws');
+const { t, lang } = require('../bin/i18n');
+// Messages des événements (clés du serveur, version anglaise de la démo) : même dictionnaire que la page.
+const I18N = require('../public/i18n.js');
+I18N.lang = lang;
 
 const W = 320, H = 208, MAIN_ID = 'claude-main';
 const MAX_AGENTS = 40, MAX_LOG = 200, MAX_FILES = 100;
@@ -34,7 +38,7 @@ const SPOTS = {
   handoff: [[160, 117], [146, 117], [174, 117]],
   spawn: [[112, 114], [98, 114], [112, 126], [98, 126]]
 };
-const LABEL = { whiteboard: 'planifie', library: 'lit', code: 'code', bench: 'teste', lounge: 'en pause', handoff: 'fait son rapport', spawn: 'arrive' };
+const LABEL = Object.fromEntries(['whiteboard', 'library', 'code', 'bench', 'lounge', 'handoff', 'spawn'].map(k => [k, t(`tui.st.${k}`)]));
 // Meubles du plan : [x, y, w, h, couleur].
 const FURNITURE = [
   [16, 6, 76, 28, '#e9e4f5'], [118, 8, 74, 26, '#1b2b4a'], [220, 4, 82, 40, '#5a3d2a'], [302, 4, 16, 40, '#2a2f3a'],
@@ -44,10 +48,10 @@ const FURNITURE = [
   [230, 128, 76, 22, '#6b3a6e'], [252, 164, 32, 10, '#8a5a3c'], [290, 180, 26, 20, '#8a5a3c']
 ];
 const THEMES = [
-  { name: 'Studio dev', wall: '#3a2f57', floorA: '#6b4a36', floorB: '#74523c' },
-  { name: 'Opéra', wall: '#3b1a24', floorA: '#5a1e2a', floorB: '#62232f' },
-  { name: 'Jardin', wall: '#2f5a2a', floorA: '#4f7a3a', floorB: '#578443' },
-  { name: 'Salle de classe', wall: '#d9cfae', floorA: '#b08a5a', floorB: '#a7814f' }
+  { name: t('tui.world.0'), wall: '#3a2f57', floorA: '#6b4a36', floorB: '#74523c' },
+  { name: t('tui.world.1'), wall: '#3b1a24', floorA: '#5a1e2a', floorB: '#62232f' },
+  { name: t('tui.world.2'), wall: '#2f5a2a', floorA: '#4f7a3a', floorB: '#578443' },
+  { name: t('tui.world.3'), wall: '#d9cfae', floorA: '#b08a5a', floorB: '#a7814f' }
 ];
 
 /* ---------------------------- Couleurs ANSI ---------------------------- */
@@ -68,7 +72,7 @@ function fit(s, width) {
   return out + ' '.repeat(Math.max(0, width - n)) + RESET;
 }
 const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const clock = ts => new Date(ts).toLocaleTimeString(lang === 'fr' ? 'fr-FR' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 /* ---------------------------- État ---------------------------- */
 function createState() {
@@ -76,7 +80,8 @@ function createState() {
 }
 let state = createState();
 let theme = 0;
-let status = 'Connexion…';
+let status = { key: 'connecting' }; // connecting | live | lost | unreachable | token | refused
+const statusText = () => t(`tui.${status.key}`, status);
 let usage = null; // coût envoyé par le serveur
 let dirty = true;
 
@@ -114,15 +119,16 @@ function log(who, color, text, kind = '') {
 
 function handle(e, replay = false) {
   const type = String(e.type || '').toUpperCase();
+  const em = I18N.msg(e);
   if (e.source === 'claude-code') state.claudeSeen = true;
-  if (type === 'RESET') { state = createState(); log('Système', '#ffb86b', 'Chambre réinitialisée.'); return; }
+  if (type === 'RESET') { state = createState(); log(t('tui.system'), '#ffb86b', t('tui.reset')); return; }
   const a = agent(e.agentId || MAIN_ID, e);
   if (type === 'SUBAGENT_SPAWN') {
     a.name = e.name || a.name; a.role = e.role || a.role; a.done = false;
     moveTo(a, 'spawn');
     if (replay) moveTo(a, ROLE_STATION[a.role] || 'code');
     else setTimeout(() => { if (a.station === 'spawn') { moveTo(a, ROLE_STATION[a.role] || 'code'); dirty = true; } }, 1500);
-    log('Claude', '#d97757', `crée ${a.name} (${a.role}) : ${e.message || ''}`, 'spawn');
+    log('Claude', '#d97757', t('tui.creates', { name: a.name, role: a.role, task: em || '' }), 'spawn');
   } else if (type === 'TOOL_START') {
     a.tool = e.tool || '';
     if (a.id !== MAIN_ID) { a.done = false; moveTo(a, TOOL_STATION[e.tool] || (String(e.tool).startsWith('mcp__') ? 'library' : ROLE_STATION[a.role] || 'code')); }
@@ -133,29 +139,30 @@ function handle(e, replay = false) {
       state.files.set(e.file, { kind: prev && prev.kind !== '·' && kind === '·' ? prev.kind : kind, by: a.name, color: a.color });
       if (state.files.size > MAX_FILES) state.files.delete(state.files.keys().next().value);
     }
-    if (Array.isArray(e.todos)) state.tasks = e.todos.slice(0, 50);
+    const td = I18N.todos(e);
+    if (Array.isArray(td)) state.tasks = td.slice(0, 50).map(x => ({ ...x }));
     else if (e.task && e.task.op === 'add' && e.task.subject) state.tasks.push({ content: e.task.subject, status: 'pending' });
-    else if (e.task && e.task.op === 'update') { const t = state.tasks[Number(e.task.id) - 1]; if (t && e.task.status) t.status = e.task.status; }
-    log(a.name, a.color, `[${e.tool || 'outil'}] ${e.message || ''}`, 'tool');
+    else if (e.task && e.task.op === 'update') { const task = state.tasks[Number(e.task.id) - 1]; if (task && e.task.status) task.status = e.task.status; }
+    log(a.name, a.color, `[${e.tool || t('tui.tool')}] ${em || ''}`, 'tool');
   } else if (type === 'TOOL_END') {
-    if (e.success === false) { a.errUntil = Date.now() + 4000; log(a.name, a.color, `✗ ${e.message || e.tool}`, 'err'); }
+    if (e.success === false) { a.errUntil = Date.now() + 4000; log(a.name, a.color, `✗ ${em || e.tool}`, 'err'); }
   } else if (type === 'AGENT_MESSAGE') {
-    state.lastMsg = { who: a.name, color: a.color, text: e.message || '' };
-    log(a.name, a.color, e.message || '', 'msg');
+    state.lastMsg = { who: a.name, color: a.color, text: em || '' };
+    log(a.name, a.color, em || '', 'msg');
   } else if (type === 'SUBAGENT_COMPLETE') {
     if (a.id === MAIN_ID) return;
     a.done = true; a.tool = ''; a.doneAt = Date.now();
     moveTo(a, replay ? 'lounge' : 'handoff');
     if (!replay) setTimeout(() => { if (a.done) { moveTo(a, 'lounge'); dirty = true; } }, 3500);
-    state.lastMsg = { who: a.name, color: a.color, text: `Rapport : ${e.message || 'mission accomplie'}` };
-    log(a.name, a.color, `rapport : ${e.message || ''}`, 'done');
+    state.lastMsg = { who: a.name, color: a.color, text: t('tui.reportBubble', { text: em || t('tui.mission') }) };
+    log(a.name, a.color, t('tui.report', { text: em || '' }), 'done');
   } else if (type === 'NOTIFY') {
-    state.lastMsg = { who: 'Claude', color: '#d97757', text: e.message || '' };
-    log('Claude', '#d97757', e.message || '', e.kind === 'waiting' ? 'err' : 'done');
+    state.lastMsg = { who: 'Claude', color: '#d97757', text: em || '' };
+    log('Claude', '#d97757', em || '', e.kind === 'waiting' ? 'err' : 'done');
     if (!replay) { state.alert = { kind: e.kind, at: Date.now() }; if (process.stdout.isTTY) process.stdout.write('\x07'); }
   } else if (type === 'ERROR') {
     a.errUntil = Date.now() + 4000;
-    log(a.name, a.color, `erreur : ${e.message || ''}`, 'err');
+    log(a.name, a.color, t('tui.errorLog', { text: em || '' }), 'err');
   }
   if (replay) { a.x = a.tx; a.y = a.ty; }
 }
@@ -210,29 +217,29 @@ function renderPanel(width, height, now) {
   const out = [];
   const subs = [...state.agents.values()].filter(a => a.id !== MAIN_ID);
   const active = subs.filter(a => !a.done).length;
-  out.push(`${BOLD}Agents${RESET} ${DIM}${active} au travail · ${subs.length - active} en pause${RESET}`);
+  out.push(`${BOLD}${t('tui.agents')}${RESET} ${DIM}${t('tui.working', { n: active, m: subs.length - active })}${RESET}`);
   const main = state.agents.get(MAIN_ID);
-  out.push(`${fg('#d97757')}✦ Claude${RESET} ${DIM}${THEMES[theme].name === 'Studio dev' ? 'orchestre' : THEMES[theme].name}${main && main.tool ? ' · ' + main.tool : ''}${RESET}`);
+  out.push(`${fg('#d97757')}✦ Claude${RESET} ${DIM}${theme === 0 ? t('tui.orchestrates') : THEMES[theme].name}${main && main.tool ? ' · ' + main.tool : ''}${RESET}`);
   for (const a of subs.slice(-8)) {
-    const what = a.errUntil > now ? `${fg('#ff4d5e')}erreur${RESET}` : a.done ? `${DIM}${LABEL[a.station] || 'terminé'}${RESET}` : `${fg('#5ef1ff')}${LABEL[a.station] || ''}${a.tool ? ' · ' + a.tool : ''}${RESET}`;
+    const what = a.errUntil > now ? `${fg('#ff4d5e')}${t('tui.error')}${RESET}` : a.done ? `${DIM}${LABEL[a.station] || t('tui.done')}${RESET}` : `${fg('#5ef1ff')}${LABEL[a.station] || ''}${a.tool ? ' · ' + a.tool : ''}${RESET}`;
     out.push(`${bg(a.color)}${fg('#120c18')}${BOLD}${(a.name[0] || '?').toUpperCase()}${RESET} ${short(a.name, 14)} ${DIM}${a.role}${RESET} ${what}`);
   }
-  if (!subs.length) out.push(`${DIM}Aucun sous-agent pour le moment.${RESET}`);
+  if (!subs.length) out.push(`${DIM}${t('tui.noAgents')}${RESET}`);
   out.push('');
   if (state.tasks.length) {
     const done = state.tasks.filter(t => t.status === 'completed').length;
     const barW = Math.max(6, Math.min(20, width - 22));
     const fill = Math.round(done / state.tasks.length * barW);
-    out.push(`${BOLD}Plan${RESET} ${fg('#7ee787')}${'█'.repeat(fill)}${DIM}${'░'.repeat(barW - fill)}${RESET} ${done}/${state.tasks.length}`);
+    out.push(`${BOLD}${t('tui.plan')}${RESET} ${fg('#7ee787')}${'█'.repeat(fill)}${DIM}${'░'.repeat(barW - fill)}${RESET} ${done}/${state.tasks.length}`);
     const cur = state.tasks.find(t => t.status === 'in_progress');
     if (cur) out.push(`${fg('#ffb86b')}▸ ${short(cur.content, width - 4)}${RESET}`);
     out.push('');
   }
   const files = [...state.files.entries()].filter(([, f]) => f.kind !== '·').slice(-5).reverse();
-  out.push(`${BOLD}Fichiers modifiés${RESET} ${DIM}${files.length ? '' : 'aucun'}${RESET}`);
+  out.push(`${BOLD}${t('tui.files')}${RESET} ${DIM}${files.length ? '' : t('tui.none')}${RESET}`);
   for (const [path, f] of files) out.push(`${fg(f.kind === '+' ? '#7ee787' : '#ffb86b')}${f.kind === '+' ? '✚' : '✎'}${RESET} ${short(path, Math.max(10, width - 16))} ${fg(f.color)}${short(f.by, 10)}${RESET}`);
   out.push('');
-  out.push(`${BOLD}Journal${RESET}`);
+  out.push(`${BOLD}${t('tui.log')}${RESET}`);
   const room = Math.max(1, height - out.length);
   for (const l of state.log.slice(-room)) {
     const c = l.kind === 'err' ? fg('#ff6b6b') : '';
@@ -246,13 +253,13 @@ function render() {
   dirty = false;
   const now = Date.now();
   const cols = process.stdout.columns || 100, rows = process.stdout.rows || 32;
-  const header = `${bg('#1e1929')}${BOLD}${fg('#d97757')} ✚ Claude Agent Room ${RESET}${bg('#1e1929')} ${status === 'En direct' ? fg('#7ee787') + '● En direct' : fg('#ffb86b') + '● ' + status}${RESET}${bg('#1e1929')}${DIM}${state.claudeSeen ? ' · Claude Code branché' : ''}${usage && usage.total && usage.total.messages ? ` · ~${usage.total.cost.toFixed(2)}` : ''}${state.alert && Date.now() - state.alert.at < 8000 ? (state.alert.kind === 'waiting' ? ' · ⏳ Claude attend ta réponse' : ' · ✅ Claude a fini') : ''}  q quitter · d démo · r vider · w monde${RESET}`;
+  const header = `${bg('#1e1929')}${BOLD}${fg('#d97757')} ✚ Claude Agent Room ${RESET}${bg('#1e1929')} ${status.key === 'live' ? fg('#7ee787') + '● ' + statusText() : fg('#ffb86b') + '● ' + statusText()}${RESET}${bg('#1e1929')}${DIM}${state.claudeSeen ? ` · ${t('tui.claude')}` : ''}${usage && usage.total && usage.total.messages ? ` · ~$${usage.total.cost.toFixed(2)}` : ''}${state.alert && Date.now() - state.alert.at < 8000 ? (state.alert.kind === 'waiting' ? ` · ${t('tui.alertWaiting')}` : ` · ${t('tui.alertDone')}`) : ''}  ${t('tui.keys')}${RESET}`;
   const lines = [fit(header, cols)];
   const wide = cols >= 110;
   const mapCols = wide ? Math.min(96, Math.floor(cols * 0.58)) : cols;
   const mapRows = Math.max(8, Math.min(Math.round(mapCols * (H / W) / 2), rows - (wide ? 4 : 12)));
   const map = renderMap(mapCols, mapRows, now);
-  const bubble = state.lastMsg ? `${fg(state.lastMsg.color)}${state.lastMsg.who}${RESET} : ${state.lastMsg.text}` : `${DIM}En attente de Claude…${RESET}`;
+  const bubble = state.lastMsg ? `${fg(state.lastMsg.color)}${state.lastMsg.who}${RESET} : ${state.lastMsg.text}` : `${DIM}${t('tui.waitingClaude')}${RESET}`;
   if (wide) {
     const panel = renderPanel(cols - mapCols - 2, rows - 2, now);
     for (let i = 0; i < rows - 2; i++) lines.push(fit((map[i] || ' '.repeat(mapCols)) + '  ' + (panel[i] || ''), cols));
@@ -282,7 +289,7 @@ function step() {
 /* ---------------------------- Connexion ---------------------------- */
 function start({ port = 3030, host = '127.0.0.1' } = {}) {
   if (!process.stdout.isTTY) {
-    console.error('✖ Le mode terminal a besoin d\'un vrai terminal (stdout n\'est pas un TTY).');
+    console.error(t('tui.needTty'));
     process.exit(1);
   }
   const token = process.env.AGENT_ROOM_TOKEN;
@@ -313,7 +320,7 @@ function start({ port = 3030, host = '127.0.0.1' } = {}) {
 
   const connect = () => {
     const ws = new WebSocket(url);
-    ws.on('open', () => { retry = 0; status = 'En direct'; dirty = true; });
+    ws.on('open', () => { retry = 0; status = { key: 'live' }; dirty = true; });
     ws.on('message', raw => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
@@ -322,11 +329,11 @@ function start({ port = 3030, host = '127.0.0.1' } = {}) {
       else if (msg.kind === 'usage') usage = msg.usage;
       dirty = true;
     });
-    ws.on('unexpected-response', (req, res) => { status = res.statusCode === 401 ? 'Jeton requis (AGENT_ROOM_TOKEN)' : `Refusé (${res.statusCode})`; dirty = true; });
+    ws.on('unexpected-response', (req, res) => { status = res.statusCode === 401 ? { key: 'token' } : { key: 'refused', code: res.statusCode }; dirty = true; });
     ws.on('error', () => {});
     ws.on('close', () => {
-      if (status === 'En direct') status = 'Connexion perdue, nouvel essai…';
-      else if (!status.startsWith('Jeton') && !status.startsWith('Refusé')) status = `Serveur injoignable sur ${base} (lance la chambre)`;
+      if (status.key === 'live') status = { key: 'lost' };
+      else if (status.key !== 'token' && status.key !== 'refused') status = { key: 'unreachable', base };
       dirty = true;
       setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
     });

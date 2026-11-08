@@ -362,6 +362,7 @@
   };
 
   const DICT = { fr, en };
+  const IN_BROWSER = typeof window !== 'undefined'; // sous Node, ne pas toucher au localStorage expérimental
   const LANGS = Object.keys(DICT);
 
   function detect() {
@@ -370,7 +371,7 @@
       if (q && DICT[q]) return q;
     } catch { /* pas d'URL */ }
     try {
-      const saved = root.localStorage && root.localStorage.getItem('agent-room:lang');
+      const saved = IN_BROWSER && root.localStorage.getItem('agent-room:lang');
       if (saved && DICT[saved]) return saved;
     } catch { /* stockage indisponible */ }
     const nav = (root.navigator && (root.navigator.language || '')) || '';
@@ -394,7 +395,7 @@
     },
     set(lang) {
       if (!DICT[lang]) return;
-      try { root.localStorage.setItem('agent-room:lang', lang); } catch { /* stockage indisponible */ }
+      try { if (IN_BROWSER) root.localStorage.setItem('agent-room:lang', lang); } catch { /* stockage indisponible */ }
     },
     /** Message affichable d'un événement, dans la langue de la page. */
     msg(e) {

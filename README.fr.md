@@ -37,7 +37,7 @@ L'assistant pose quatre questions (brancher Claude Code ? proposer les outils d'
 Tout se défait : `hooks remove`, `advisor off`, et l'ambiance se change dans la page.
 
 > [!TIP]
-> L'interface parle **français et anglais** : elle suit la langue du navigateur, et le menu **Langue** (ou `?lang=fr` / `?lang=en`) la change.
+> L'interface parle **français et anglais** : elle suit la langue du navigateur, et le menu **Langue** (ou `?lang=fr` / `?lang=en`) la change. Le mode terminal, la CLI et le conseiller tokens suivent la langue du système (`--lang fr|en` ou `AGENT_ROOM_LANG`).
 
 ## ✨ Fonctionnalités
 
@@ -300,7 +300,7 @@ Le serveur démarre tout seul s'il le faut. Tu vois le plan de la chambre (Claud
 ▀▀▀▀Q▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀a▀▀b▀▀  ✎ src/pages/Login.tsx Front
 ```
 
-Touches : <kbd>q</kbd> quitter · <kbd>d</kbd> démo · <kbd>r</kbd> vider · <kbd>w</kbd> monde suivant. Sur un terminal ancien sans couleurs 24 bits, ajoute `--256`.
+Touches : <kbd>q</kbd> quitter · <kbd>d</kbd> démo · <kbd>r</kbd> vider · <kbd>w</kbd> monde suivant. Sur un terminal ancien sans couleurs 24 bits, ajoute `--256`. Comme la CLI, il suit la langue du système ; force-la avec `--lang fr` ou `AGENT_ROOM_LANG=fr`.
 
 ## 💡 Économiser des tokens
 
@@ -378,6 +378,7 @@ Modèle de menace et signalement d'une faille : [SECURITY.md](SECURITY.md).
 | | `AGENT_ROOM_MODE` | `fun` | `pro` : ambiance sobre (aussi dans `config.json` et dans la page) |
 | | `AGENT_ROOM_HISTORY` | `1` | `0` : aucun journal sur disque |
 | | `AGENT_ROOM_RETENTION_DAYS` | `14` | Jours de journal conservés (1 à 365) |
+| | `AGENT_ROOM_LANG` | *(langue du système)* | `fr` ou `en` pour le mode terminal, la CLI, les messages du serveur et le conseiller tokens (comme `--lang`) |
 | | `GITHUB_TOKEN` | | Facultatif : relève la limite de l'API GitHub pour `advisor check` |
 
 Les réglages persistants sont dans `~/.claude/agent-room/config.json`. Toutes les commandes : `npx github:MehenniIslam/claude-agent-room --help`.

@@ -128,7 +128,7 @@ test('ambiance fun / pro partagée par le serveur', async t => {
 test('conseiller tokens : liste fermée, contexte sûr, règles idempotentes', async () => {
   assert.throws(() => advisor.resolveIds(['rtk']), /inconnu/);
   assert.deepEqual(advisor.resolveIds(['essentiel']), ['rules', 'caveman', 'context7']);
-  const ctx = buildAdvisorContext(advisor.CATALOG);
+  const ctx = buildAdvisorContext(advisor.CATALOG, 'fr');
   assert.match(ctx, /UNE fois/);
   assert.match(ctx, /jamais de `curl \| sh`/);
   assert.match(ctx, /\/plugin install caveman --marketplace JuliusBrussee\/caveman/);
@@ -193,4 +193,43 @@ test('traduction : clés générées par le serveur, filtrées à l\'entrée', a
   assert.match(e.en.message, /MASQUÉ/);
   const bad = await request(port, { method: 'POST', path: '/api/event', headers: JSON_HEADERS, body: { type: 'AGENT_MESSAGE', msg: { k: '<script>' } } });
   assert.equal(bad.json.events[0].msg, undefined);
+});
+
+test('CLI et terminal : dictionnaire complet, détection de la langue', () => {
+  const { DICT, detect } = require('../bin/i18n.js');
+  const fr = Object.keys(DICT.fr).sort(), en = Object.keys(DICT.en).sort();
+  assert.deepEqual(fr.filter(k => !en.includes(k)), [], 'clés françaises non traduites');
+  assert.deepEqual(en.filter(k => !fr.includes(k)), [], 'clés anglaises sans équivalent');
+  const vars = x => (x.match(/\{\w+\}/g) || []).sort().join();
+  for (const k of fr) assert.equal(vars(DICT.en[k]), vars(DICT.fr[k]), `variables différentes pour ${k}`);
+  assert.equal(detect(['node', 'x', '--lang', 'en'], { LANG: 'fr_FR.UTF-8' }), 'en');
+  assert.equal(detect(['node', 'x', '--lang=fr'], {}), 'fr');
+  assert.equal(detect(['node', 'x'], { AGENT_ROOM_LANG: 'fr' }), 'fr');
+  assert.equal(detect(['node', 'x'], { LANG: 'C.UTF-8', LC_ALL: '', AGENT_ROOM_LANG: '', LC_MESSAGES: 'en_GB' }), 'en');
+  assert.equal(detect(['node', 'x'], { LANG: 'fr_CA.UTF-8' }), 'fr');
+});
+
+test('conseiller tokens en anglais : catalogue traduit, contexte sûr', () => {
+  const catalog = advisor.CATALOG;
+  for (const t of catalog.tools) {
+    for (const k of ['what', 'bestFor', 'savings']) assert.ok(t.en && t.en[k], `${t.id}.en.${k}`);
+    assert.equal(t.en.risks.length, t.risks.length, `${t.id} : risques traduits`);
+  }
+  for (const n of catalog.notRecommended) assert.ok(n.why_en, n.name);
+  const ctx = buildAdvisorContext(catalog, 'en');
+  assert.match(ctx, /offer the user ONCE/);
+  assert.match(ctx, /never `curl \| sh`/);
+  assert.match(ctx, /\/plugin install caveman --marketplace JuliusBrussee\/caveman/);
+  assert.doesNotMatch(ctx, /Gain : |Risque|l'utilisateur/);
+  assert.ok(ctx.length < 4000);
+});
+
+test('CLI : aide et commande inconnue dans la langue choisie', () => {
+  const { spawnSync } = require('node:child_process');
+  const cli = path.join(__dirname, '..', 'bin', 'cli.js');
+  const run = (args, lang) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, AGENT_ROOM_LANG: lang } });
+  assert.match(run(['--help'], 'en').stdout, /Usage:\s+claude-agent-room setup\s+install everything/);
+  assert.match(run(['--help'], 'fr').stdout, /Utilisation :/);
+  assert.match(run(['nope', '--lang', 'en']).stderr, /Unknown command: nope/);
+  assert.match(run(['advisor', 'apply', 'rtk', '--lang', 'en']).stderr, /Unknown tool: "rtk"/);
 });

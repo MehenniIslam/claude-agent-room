@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.0
+
+### Terminal et CLI en anglais
+- Le **mode terminal**, la **CLI** (aide, setup, doctor, hooks, demo, watch), le **conseiller tokens** et les messages de démarrage du serveur existent en français et en anglais.
+- Langue choisie par `--lang en|fr`, sinon `AGENT_ROOM_LANG`, sinon la langue du système (`LC_ALL`, `LANG`…). Dictionnaire dans `bin/i18n.js`.
+- Le hook suit la même règle : le contexte du conseiller envoyé à Claude et les messages de `watch` sont dans la langue de l'utilisateur ; le catalogue porte une version anglaise de chaque outil.
+- Le mode terminal réutilise les traductions de la page (`public/i18n.js`) pour le journal et le plan.
+- `doctor` reconnaît un jeton manquant par le code HTTP 401, plus par le texte du message.
+- Tests : mêmes clés et mêmes variables dans les deux langues, détection de la langue, contexte anglais du conseiller, aide et erreurs de la CLI.
+
+### Corrections
+- Mode terminal : le coût affiché porte le symbole `$`.
+- Plus d'avertissement de Node 26 sur `localStorage` quand le mode terminal charge les traductions.
+
 ## 1.4.0
 
 ### Interface en anglais

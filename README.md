@@ -37,7 +37,7 @@ The wizard asks four questions (connect Claude Code? suggest token-saving tools?
 Every step is reversible: `hooks remove`, `advisor off`, and the mood switches from the page.
 
 > [!TIP]
-> The interface speaks **English and French**: it follows your browser's language, and the **Language** menu (or `?lang=en` / `?lang=fr`) switches it.
+> The interface speaks **English and French**: it follows your browser's language, and the **Language** menu (or `?lang=en` / `?lang=fr`) switches it. The terminal mode, the CLI and the token advisor follow your system language (`--lang en|fr` or `AGENT_ROOM_LANG`).
 
 ## ✨ Features
 
@@ -300,7 +300,7 @@ The server starts by itself if needed. You get the floor plan (Claude = ✦, eac
 ▀▀▀▀Q▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀a▀▀b▀▀  ✎ src/pages/Login.tsx Front
 ```
 
-Keys: <kbd>q</kbd> quit · <kbd>d</kbd> demo · <kbd>r</kbd> clear · <kbd>w</kbd> next world. On an old terminal without 24-bit color, add `--256`. The terminal mode and the CLI messages are in French for now.
+Keys: <kbd>q</kbd> quit · <kbd>d</kbd> demo · <kbd>r</kbd> clear · <kbd>w</kbd> next world. On an old terminal without 24-bit color, add `--256`. Like the CLI, it follows your system language; force it with `--lang en` or `AGENT_ROOM_LANG=en`.
 
 ## 💡 Save tokens
 
@@ -378,6 +378,7 @@ Threat model and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 | | `AGENT_ROOM_MODE` | `fun` | `pro`: sober mood (also in `config.json` and the page) |
 | | `AGENT_ROOM_HISTORY` | `1` | `0`: no on-disk log |
 | | `AGENT_ROOM_RETENTION_DAYS` | `14` | Days of log kept (1–365) |
+| | `AGENT_ROOM_LANG` | *(system language)* | `en` or `fr` for the terminal mode, the CLI, the server logs and the token advisor (same as `--lang`) |
 | | `GITHUB_TOKEN` | | Optional: raises the GitHub API limit for `advisor check` |
 
 Persistent settings live in `~/.claude/agent-room/config.json`. All commands: `npx github:MehenniIslam/claude-agent-room --help`.
