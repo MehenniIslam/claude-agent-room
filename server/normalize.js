@@ -12,6 +12,7 @@
 
 const MAIN_ID = 'claude-main';
 const SPAWN_TOOLS = new Set(['Task', 'Agent', 'dispatch_subagent']);
+const MAX_TRACKED = 300; // sous-agents mémorisés au plus (les actifs ne sont jamais oubliés)
 
 function short(text, max = 140) {
   if (text == null) return '';
@@ -29,11 +30,14 @@ function inferRole(text) {
   return 'Coder';
 }
 
+const STOP_WORDS = new Set(['le', 'la', 'les', 'l', 'du', 'de', 'des', 'd', 'un', 'une', 'et', 'en', 'au', 'aux', 'pour', 'the', 'a', 'an', 'of', 'to', 'for', 'and']);
+
 function prettyName(input) {
-  const base = input.subagent_type && input.subagent_type !== 'general-purpose'
+  const base = input.subagent_type && !['general-purpose', 'fork', 'teammate'].includes(input.subagent_type)
     ? input.subagent_type
     : (input.description || 'Agent');
-  const words = String(base).replace(/[^\p{L}\p{N} _-]/gu, ' ').trim().split(/[\s_-]+/).slice(0, 2);
+  const words = String(base).replace(/[^\p{L}\p{N} _-]/gu, ' ').trim().split(/[\s_-]+/)
+    .filter(w => w && !STOP_WORDS.has(w.toLowerCase())).slice(0, 2);
   const name = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-') || 'Agent';
   return short(name, 18);
 }
@@ -56,6 +60,35 @@ function describeTool(tool, input = {}) {
     case 'TaskUpdate': return { file: '', message: 'Je mets à jour la liste de tâches' };
     default: return { file, message: `Outil ${tool}` };
   }
+}
+
+const TODO_STATUS = new Set(['pending', 'in_progress', 'completed']);
+const lines = t => (t ? String(t).replace(/\n$/, '').split('\n') : []);
+
+/** Diff lisible d'une modification de fichier : lignes retirées (-) puis ajoutées (+). */
+function makeDiff(tool, input) {
+  const edits = tool === 'MultiEdit' ? (Array.isArray(input.edits) ? input.edits : [])
+    : tool === 'Edit' ? [input]
+    : tool === 'Write' ? [{ old_string: '', new_string: input.content }] : [];
+  let added = 0, removed = 0;
+  const parts = edits.slice(0, 20).map(e => {
+    const o = lines(e.old_string), n = lines(e.new_string);
+    removed += o.length; added += n.length;
+    return [...o.map(l => `-${l}`), ...n.map(l => `+${l}`)].join('\n');
+  });
+  const diff = parts.join('\n@@\n');
+  return diff ? { diff: diff.length > 6000 ? diff.slice(0, diff.lastIndexOf('\n', 6000)) + '\n…' : diff, added, removed } : {};
+}
+
+/** Champs en plus pour certains outils : liste de tâches (TodoWrite, TaskCreate/Update) et diffs. */
+function toolExtras(tool, input) {
+  if (tool === 'TodoWrite' && Array.isArray(input.todos)) {
+    return { todos: input.todos.slice(0, 50).map(t => ({ content: short(t.content || t.activeForm, 160), status: TODO_STATUS.has(t.status) ? t.status : 'pending' })) };
+  }
+  if (tool === 'TaskCreate') return { task: { op: 'add', subject: short(input.subject || input.description, 160) } };
+  if (tool === 'TaskUpdate') return { task: { op: 'update', id: short(input.taskId, 20), status: TODO_STATUS.has(input.status) ? input.status : undefined, subject: input.subject ? short(input.subject, 160) : undefined } };
+  if (tool === 'Edit' || tool === 'MultiEdit' || tool === 'Write') return makeDiff(tool, input);
+  return {};
 }
 
 function extractText(resp) {
@@ -107,6 +140,19 @@ class HookNormalizer {
     const s = this.subs.get(subId);
     if (s) s.done = true;
     this.stack = this.stack.filter(id => id !== subId);
+    this.prune();
+  }
+
+  /** Longues sessions : on oublie les plus vieux sous-agents terminés pour que la mémoire reste bornée. */
+  prune(max = MAX_TRACKED) {
+    if (this.subs.size <= max) return;
+    for (const [id, s] of this.subs) {
+      if (this.subs.size <= max) break;
+      if (!s.done) continue;
+      this.subs.delete(id);
+      if (s.toolUseId) this.byToolUse.delete(s.toolUseId);
+      if (s.agentRef) this.byAgentRef.delete(s.agentRef);
+    }
   }
 
   /** Retourne une liste (éventuellement vide) d'événements normalisés. */
@@ -120,8 +166,12 @@ class HookNormalizer {
       return [{ ...base, type: 'AGENT_MESSAGE', agentId: MAIN_ID, message: `Nouvelle demande : ${short(p.prompt, 160)}` }];
     }
 
+    // Fin d'un tour, ou Claude bloqué sur une permission / une question : la page prévient (son, notification).
     if (ev === 'Stop') {
-      return [{ ...base, type: 'AGENT_MESSAGE', agentId: MAIN_ID, message: "J'ai terminé ce tour, j'attends la suite." }];
+      return [{ ...base, type: 'NOTIFY', kind: 'done', agentId: MAIN_ID, message: "J'ai terminé, à toi de jouer !" }];
+    }
+    if (ev === 'Notification') {
+      return [{ ...base, type: 'NOTIFY', kind: 'waiting', agentId: MAIN_ID, message: short(p.message || "J'attends ta réponse.", 200) }];
     }
 
     if (ev === 'PreToolUse' && SPAWN_TOOLS.has(tool)) {
@@ -132,6 +182,8 @@ class HookNormalizer {
       this.subs.set(id, sub);
       if (p.tool_use_id) this.byToolUse.set(p.tool_use_id, id);
       this.stack.push(id);
+      // Sous-agents jamais clos (Claude interrompu…) : on ne les garde pas indéfiniment comme "actifs".
+      while (this.stack.length > 100) this.finish(this.stack[0]);
       const roleHint = `${input.subagent_type || ''} ${input.description || ''} ${input.prompt || ''}`;
       return [{
         ...base,
@@ -178,7 +230,7 @@ class HookNormalizer {
     if (ev === 'PreToolUse' && tool) {
       const agentId = this.activeSub(p.agent_id);
       const d = describeTool(tool, input);
-      return [{ ...base, type: 'TOOL_START', agentId, tool, file: d.file, message: d.message }];
+      return [{ ...base, type: 'TOOL_START', agentId, tool, file: d.file, message: d.message, ...toolExtras(tool, input) }];
     }
 
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && tool) {
@@ -193,4 +245,4 @@ class HookNormalizer {
   }
 }
 
-module.exports = { HookNormalizer, MAIN_ID, inferRole, short };
+module.exports = { HookNormalizer, MAIN_ID, inferRole, short, makeDiff, toolExtras };

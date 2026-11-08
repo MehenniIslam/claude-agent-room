@@ -22,7 +22,17 @@ const TOOL_STATION: Record<string, string> = {
 const ACTIVITY: Record<string, string> = { whiteboard: 'planning', library: 'reading', code: 'coding', bench: 'bash', lounge: 'coffee', handoff: 'handoff' }
 const LABEL: Record<string, string> = { planning: 'Planifie', reading: 'Lit des fichiers', coding: 'Écrit du code', bash: 'Lance des commandes', coffee: 'En pause', handoff: 'Remet son rapport' }
 const RETIRE_DELAY = 4500
+// Au-delà, les plus anciens agents en pause quittent la chambre : le SVG reste sous la limite de taille.
+const MAX_LOUNGE = 6
 const timers = new Map<string, Array<{ cancel: () => void }>>()
+
+function capLounge(s: RoomState): RoomState {
+  const lounge = s.agents.filter(a => a.status === 'lounge').sort((a, b) => a.spawnedAt - b.spawnedAt)
+  if (lounge.length <= MAX_LOUNGE) return s
+  const gone = new Set(lounge.slice(0, lounge.length - MAX_LOUNGE).map(a => a.key))
+  for (const k of gone) clearTimers(k)
+  return { ...s, agents: s.agents.filter(a => !gone.has(a.key)) }
+}
 
 const short = (s: string, n: number) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim()
@@ -184,7 +194,7 @@ export const register: Register = on => {
     const walk1 = walkMs(s1.agents.find(x => x.key === key)!)
     later($, key, walk1 + 200, (s, now) => setAgent(s, key, x => ({ ...x, bubble: `Rapport : ${report}`, bubbleAt: now })))
     later($, key, walk1 + 2600, (s, now) => ({ ...s, main: { ...s.main, bubble: `Merci ${a.name}, beau travail !`, bubbleAt: now } }))
-    later($, key, walk1 + 4200, (s, now) => setAgent(s, key, x => ({ ...moveTo(s, x, 'lounge', now), status: 'lounge' })))
+    later($, key, walk1 + 4200, (s, now) => capLounge(setAgent(s, key, x => ({ ...moveTo(s, x, 'lounge', now), status: 'lounge' }))))
     const p = await read($, prefs)
     if (p.ending === 'pompe') scheduleRetire($, key, walk1 + 4200 + 3500 + RETIRE_DELAY)
     return res

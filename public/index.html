@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0c0a12" />
+  <meta name="description" content="Claude et ses sous-agents, en direct, dans une chambre en pixel art." />
   <title>Claude Agent Room</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 8 8%27 shape-rendering=%27crispEdges%27%3E%3Cpath fill=%27%23d97757%27 d=%27M3 0h2v3h3v2H5v3H3V5H0V3h3z%27/%3E%3C/svg%3E" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="preload" href="fonts/pixelify-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <a class="skip-link" href="#log">Aller au journal</a>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
@@ -20,19 +23,28 @@
       </div>
     </div>
 
-    <div id="status" class="status status--connecting" title="État de la connexion WebSocket">
-      <span class="dot"></span><span class="label">Connexion…</span>
+    <div id="status" class="status status--connecting" role="status" aria-live="polite" title="État de la connexion">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label">Connexion…</span>
+      <span class="source" id="status-source"></span>
     </div>
 
     <dl class="counters">
       <div><dt>Agents actifs</dt><dd id="c-agents">0</dd></div>
-      <div><dt>Appels d'outils</dt><dd id="c-tools">0</dd></div>
+      <div><dt>Outils</dt><dd id="c-tools">0</dd></div>
       <div><dt>Événements</dt><dd id="c-events">0</dd></div>
+      <div id="cost-box" title="Estimation au tarif public de l'API Anthropic (un abonnement Pro/Max ne facture pas au token)"><dt>Coût estimé</dt><dd id="c-cost">—</dd></div>
     </dl>
 
     <div class="pickers">
       <label class="picker"><span>Monde</span><select id="world-select" aria-label="Choisir le monde"></select></label>
-      <label class="picker"><span>Fin des agents</span>
+      <label class="picker"><span>Ambiance</span>
+        <select id="mode-select" aria-label="Ambiance de la chambre">
+          <option value="fun">🎉 Fun</option>
+          <option value="pro">💼 Pro</option>
+        </select>
+      </label>
+      <label class="picker" id="ending-picker"><span>Fin des agents</span>
         <select id="ending-select" aria-label="Ce qui arrive aux agents terminés">
           <option value="pompe">💥 À la pompe</option>
           <option value="cafe">☕ Pause café</option>
@@ -41,28 +53,50 @@
     </div>
 
     <div class="actions">
-      <button id="btn-demo" class="btn btn--primary" type="button">▶ <span class="long">Lancer Simulation </span>Démo</button>
-      <button id="btn-spawn" class="btn" type="button">✦ <span class="long">Tester un </span>Spawn</button>
-      <button id="btn-reset" class="btn btn--ghost" type="button" title="Vider la chambre">⟲</button>
+      <button id="btn-demo" class="btn btn--primary" type="button" title="Lancer la démo (D)">▶ <span class="long">Lancer la </span>démo</button>
+      <button id="btn-spawn" class="btn" type="button" title="Faire apparaître un agent de test (S)">✦ <span class="long">Tester un </span>spawn</button>
+      <div class="btn-group" role="group" aria-label="Affichage">
+        <button id="btn-notify" class="btn btn--icon" type="button" title="Prévenir quand Claude a fini ou attend ta réponse (N)" aria-label="Notifications" aria-pressed="true">🔔</button>
+        <button id="btn-reset" class="btn btn--icon" type="button" title="Vider la chambre (R)" aria-label="Vider la chambre">⟲</button>
+        <button id="btn-fullscreen" class="btn btn--icon" type="button" title="Plein écran (F)" aria-label="Plein écran">⛶</button>
+        <button id="btn-help" class="btn btn--icon" type="button" title="Aide et raccourcis (?)" aria-label="Aide et raccourcis">?</button>
+      </div>
     </div>
   </header>
 
   <main class="layout">
     <section class="stage" id="stage">
-      <canvas id="room" aria-label="Chambre des agents en pixel art"></canvas>
-      <div id="empty-hint" class="empty-hint hidden">
-        <strong>La chambre est calme.</strong>
-        <span>Lance la démo, ou branche Claude Code : <code>npm run hooks:install</code></span>
-      </div>
+      <canvas id="room" role="img" aria-label="Chambre des agents en pixel art"></canvas>
 
-      <article id="inspector" class="inspector hidden" aria-live="polite">
+      <aside id="onboarding" class="onboarding hidden" aria-labelledby="onb-title">
+        <button id="onb-close" class="icon-btn onboarding-close" type="button" aria-label="Masquer">✕</button>
+        <h2 id="onb-title">La chambre est calme.</h2>
+        <p class="muted">Regarde une mission complète, ou branche Claude Code pour voir tes vrais agents.</p>
+        <div class="onb-grid">
+          <div class="onb-card">
+            <span class="onb-step">A</span>
+            <strong>Voir la démo</strong>
+            <p>5 sous-agents, un test qui échoue, une correction. Aucun token consommé.</p>
+            <button id="onb-demo" class="btn btn--primary" type="button">▶ Lancer la démo</button>
+          </div>
+          <div class="onb-card">
+            <span class="onb-step">B</span>
+            <strong>Brancher Claude Code</strong>
+            <p>Dans un autre terminal :</p>
+            <div class="copy-row"><code id="onb-cmd">npx github:MehenniIslam/claude-agent-room hooks install</code><button class="copy-btn" type="button" data-copy="#onb-cmd" aria-label="Copier la commande">Copier</button></div>
+            <p class="muted small">Puis relance Claude Code et demande une tâche avec des sous-agents.</p>
+          </div>
+        </div>
+      </aside>
+
+      <article id="inspector" class="inspector hidden" aria-live="polite" aria-labelledby="i-name">
         <header>
           <span class="swatch" id="i-swatch"></span>
           <div>
             <h2 id="i-name">Agent</h2>
             <p><span id="i-role" class="role-chip">Role</span> <span id="i-status" class="muted"></span></p>
           </div>
-          <button id="i-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+          <button id="i-close" class="icon-btn" type="button" aria-label="Fermer la fiche">✕</button>
         </header>
         <section>
           <h3>Prompt initial</h3>
@@ -77,6 +111,8 @@
           <ol id="i-history" class="history"></ol>
         </section>
       </article>
+
+      <div id="toasts" class="toasts" aria-live="assertive"></div>
     </section>
 
     <aside class="side">
@@ -85,11 +121,90 @@
         <ul id="tree" class="tree"></ul>
       </section>
       <section class="panel panel--grow">
-        <h2 class="panel-title">Journal en direct <button id="btn-clear-log" class="link-btn" type="button">effacer</button></h2>
-        <ol id="log" class="log"></ol>
+        <div class="tabs" role="tablist" aria-label="Activité">
+          <button class="tab active" id="tab-log" role="tab" aria-selected="true" aria-controls="pane-log" type="button">Journal</button>
+          <button class="tab" id="tab-tasks" role="tab" aria-selected="false" aria-controls="pane-tasks" type="button">Tâches <span id="tasks-count" class="tab-count">0</span></button>
+          <button class="tab" id="tab-files" role="tab" aria-selected="false" aria-controls="pane-files" type="button">Fichiers <span id="files-count" class="tab-count">0</span></button>
+          <span class="tab-tools">
+            <button id="btn-export" class="link-btn" type="button" title="Télécharger le journal du jour (JSON ou CSV)">exporter</button>
+            <button id="btn-clear-log" class="link-btn" type="button">effacer</button>
+          </span>
+        </div>
+        <div id="pane-tasks" class="tab-pane hidden" role="tabpanel" aria-labelledby="tab-tasks">
+          <div class="progress" aria-hidden="true"><span id="tasks-bar"></span></div>
+          <p id="tasks-summary" class="muted small">Le plan de Claude s'affichera ici dès qu'il fera une liste de tâches.</p>
+          <ul id="task-list" class="task-list"></ul>
+        </div>
+        <div id="pane-log" class="tab-pane" role="tabpanel" aria-labelledby="tab-log">
+          <div class="filters" role="group" aria-label="Filtrer le journal">
+            <button class="filter active" type="button" data-filter="all">Tout</button>
+            <button class="filter" type="button" data-filter="TOOL">Outils</button>
+            <button class="filter" type="button" data-filter="MSG">Messages</button>
+            <button class="filter" type="button" data-filter="ERR">Erreurs</button>
+          </div>
+          <ol id="log" class="log" tabindex="-1"></ol>
+        </div>
+        <div id="pane-files" class="tab-pane hidden" role="tabpanel" aria-labelledby="tab-files">
+          <ul id="file-list" class="file-list"></ul>
+        </div>
       </section>
     </aside>
   </main>
+
+  <dialog id="help" class="help" aria-labelledby="help-title">
+    <div class="help-head">
+      <h2 id="help-title">Aide</h2>
+      <button id="help-close" class="icon-btn" type="button" aria-label="Fermer l'aide">✕</button>
+    </div>
+    <section>
+      <h3>Raccourcis clavier</h3>
+      <dl class="keys">
+        <div><dt><kbd>D</kbd></dt><dd>Lancer la démo</dd></div>
+        <div><dt><kbd>S</kbd></dt><dd>Agent de test</dd></div>
+        <div><dt><kbd>R</kbd></dt><dd>Vider la chambre</dd></div>
+        <div><dt><kbd>W</kbd></dt><dd>Monde suivant</dd></div>
+        <div><dt><kbd>F</kbd></dt><dd>Plein écran</dd></div>
+        <div><dt><kbd>N</kbd></dt><dd>Notifications oui / non</dd></div>
+        <div><dt><kbd>Échap</kbd></dt><dd>Fermer la fiche</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h3>Économiser des tokens</h3>
+      <p class="muted small">Au début d'un nouveau projet, Claude te propose une sélection d'outils vérifiés (règles CLAUDE.md, Caveman, Context7…). Liste, gains mesurés et risques :</p>
+      <div class="copy-row"><code id="help-advisor">npx github:MehenniIslam/claude-agent-room advisor</code><button class="copy-btn" type="button" data-copy="#help-advisor" aria-label="Copier la commande">Copier</button></div>
+    </section>
+    <section>
+      <h3>Brancher Claude Code</h3>
+      <ol class="steps">
+        <li>Laisse cette page ouverte (le serveur doit tourner).</li>
+        <li>Dans un autre terminal : <code>npx github:MehenniIslam/claude-agent-room hooks install</code></li>
+        <li>Relance Claude Code, tape <code>/hooks</code> pour vérifier.</li>
+        <li>Un souci ? <code>npx github:MehenniIslam/claude-agent-room doctor</code> vérifie tout.</li>
+      </ol>
+    </section>
+    <section>
+      <h3>Confidentialité</h3>
+      <p class="muted small">Tout reste sur ta machine. Le serveur n'écoute que <code>127.0.0.1</code>, refuse les autres sites, et masque les clés API, tokens et mots de passe repérés avant de les afficher.</p>
+    </section>
+  </dialog>
+
+  <dialog id="diff" class="help diff-dialog" aria-labelledby="diff-title">
+    <div class="help-head">
+      <h2 id="diff-title">Fichier</h2>
+      <button id="diff-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+    </div>
+    <p id="diff-meta" class="muted small"></p>
+    <pre id="diff-body" class="diff-body"></pre>
+  </dialog>
+
+  <dialog id="export" class="help" aria-labelledby="export-title">
+    <div class="help-head">
+      <h2 id="export-title">Exporter le journal</h2>
+      <button id="export-close" class="icon-btn" type="button" aria-label="Fermer">✕</button>
+    </div>
+    <p class="muted small">Le journal est gardé sur ta machine (<code>~/.claude/agent-room/history/</code>), secrets déjà masqués. Choisis un jour :</p>
+    <ul id="export-days" class="export-days"></ul>
+  </dialog>
 
   <script src="demo-scenario.js"></script>
   <script src="worlds.js"></script>
