@@ -32,12 +32,12 @@ You need [Node.js](https://nodejs.org) 18.17 or newer (`node -v`). Then, one com
 npx github:MehenniIslam/claude-agent-room setup
 ```
 
-The wizard asks four questions (connect Claude Code? suggest token-saving tools? add the token rules to this project? fun or pro mood?) and opens the room at **http://localhost:3030**. Click **▶ démo** to watch a full mission — 5 subagents, a failing test, a fix — without spending a single token.
+The wizard asks four questions (connect Claude Code? suggest token-saving tools? add the token rules to this project? fun or pro mood?) and opens the room at **http://localhost:3030**. Click **▶ demo** to watch a full mission — 5 subagents, a failing test, a fix — without spending a single token.
 
 Every step is reversible: `hooks remove`, `advisor off`, and the mood switches from the page.
 
-> [!NOTE]
-> The room's interface is in French for now. Everything works the same; an English UI is on the roadmap.
+> [!TIP]
+> The interface speaks **English and French**: it follows your browser's language, and the **Language** menu (or `?lang=en` / `?lang=fr`) switches it.
 
 ## ✨ Features
 
@@ -165,7 +165,7 @@ npx github:MehenniIslam/claude-agent-room hooks install
 2. Restart Claude Code, type `/hooks` to check they're there.
 3. Give it a task with subagents, e.g. *"Use a subagent to explore the auth code, then another one to write the tests."*
 
-The badge at the top switches to **En direct · Claude Code branché** on the first event. Something off? One command checks Node, dependencies, the server and the hooks, and sends a test bubble:
+The badge at the top switches to **Live · Claude Code connected** on the first event. Something off? One command checks Node, dependencies, the server and the hooks, and sends a test bubble:
 
 ```bash
 npx github:MehenniIslam/claude-agent-room doctor
@@ -222,7 +222,7 @@ Only new lines are replayed.
 
 <br>
 
-When Claude finishes its turn or waits for you (a permission, a question), the room chimes and shows a toast. If the tab is in the background, its title becomes `(1) Claude a fini` and a system notification pops up (your browser asks for permission the first time). The bell, or <kbd>N</kbd>, toggles it. The terminal mode rings the terminal bell.
+When Claude finishes its turn or waits for you (a permission, a question), the room chimes and shows a toast. If the tab is in the background, its title becomes `(1) Claude is done` and a system notification pops up (your browser asks for permission the first time). The bell, or <kbd>N</kbd>, toggles it. The terminal mode rings the terminal bell.
 
 </details>
 
@@ -240,7 +240,7 @@ The room reads the token counters Claude Code writes into its transcripts (`~/.c
 
 <br>
 
-**Ambiance** menu: in **pro**, no shotgun (finished agents stay on their coffee break) and no small talk in the lounge. The choice is shared by every screen connected to the same server and saved in `~/.claude/agent-room/config.json`. For one specific screen: `http://localhost:3030/?mode=pro`.
+**Mood** menu: in **pro**, no shotgun (finished agents stay on their coffee break) and no small talk in the lounge. The choice is shared by every screen connected to the same server and saved in `~/.claude/agent-room/config.json`. For one specific screen: `http://localhost:3030/?mode=pro`.
 
 </details>
 
@@ -275,11 +275,11 @@ Every event is kept on your machine, one file per day in `~/.claude/agent-room/h
 </tr>
 </table>
 
-Switch live from the **Monde** menu or with <kbd>W</kbd>. Direct link: `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
+Switch live from the **World** menu or with <kbd>W</kbd>. Direct link: `http://localhost:3030/?world=opera` (`studio`, `opera`, `garden`, `classroom`).
 
 ### 💥 Endings: shotgun or coffee break
 
-A subagent that has handed in its report will never be called again. By default the room shows it plainly: after its lounge break, **Claude pulls out a shotgun**. Click-clack, BANG, the agent floats away as a little ghost with a last word. Pure cartoon — stars and a halo, nothing more. If it gets called back before the shot, it's spared. Prefer the gentle version? **Fin des agents → ☕ Pause café** (or `?fin=cafe`), or pro mode.
+A subagent that has handed in its report will never be called again. By default the room shows it plainly: after its lounge break, **Claude pulls out a shotgun**. Click-clack, BANG, the agent floats away as a little ghost with a last word. Pure cartoon — stars and a halo, nothing more. If it gets called back before the shot, it's spared. Prefer the gentle version? **Agent ending → ☕ Coffee break** (or `?fin=cafe`), or pro mode.
 
 ## 💻 In the terminal
 
@@ -300,7 +300,7 @@ The server starts by itself if needed. You get the floor plan (Claude = ✦, eac
 ▀▀▀▀Q▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀a▀▀b▀▀  ✎ src/pages/Login.tsx Front
 ```
 
-Keys: <kbd>q</kbd> quit · <kbd>d</kbd> demo · <kbd>r</kbd> clear · <kbd>w</kbd> next world. On an old terminal without 24-bit color, add `--256`.
+Keys: <kbd>q</kbd> quit · <kbd>d</kbd> demo · <kbd>r</kbd> clear · <kbd>w</kbd> next world. On an old terminal without 24-bit color, add `--256`. The terminal mode and the CLI messages are in French for now.
 
 ## 💡 Save tokens
 
@@ -408,7 +408,7 @@ If it's already the room, the CLI detects it and just gives you the URL. Otherwi
 </details>
 
 <details>
-<summary><b>The badge says "Jeton requis" (token required)</b></summary>
+<summary><b>The badge says "Token required"</b></summary>
 
 <br>
 
@@ -554,7 +554,7 @@ claude-agent-room/
 │   ├── claude-hook.js       # hook stdin → POST (+ masking, token advisor, --jsonl mode)
 │   └── setup-hooks.js       # installs / removes the hooks
 ├── advisor/                 # token advisor: vetted catalog, safe install, bundled rules
-├── public/                  # web page: isometric engine, 4 worlds, HUD, fonts
+├── public/                  # web page: isometric engine, 4 worlds, HUD, translations (i18n.js), fonts
 ├── tui/                     # the room in the terminal
 ├── plugin/agent-room/       # Claude Code plugin: SVG panel, file tracking
 ├── .claude-plugin/          # marketplace (makes the repo installable with /plugin)
@@ -594,7 +594,7 @@ npm run dev      # server restarts on every change
 npm test         # security, masking, hooks, cost, log, advisor, terminal
 ```
 
-Contributions are welcome — a new world, an agent role, a translation… Open an issue to discuss, or go straight to a pull request. Report security issues privately (see [SECURITY.md](SECURITY.md)). Release notes: [CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome — a new world, an agent role, a new language (copy the `en` block in `public/i18n.js`)… Open an issue to discuss, or go straight to a pull request. Report security issues privately (see [SECURITY.md](SECURITY.md)). Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 <details>
 <summary><b>Publishing to npm</b></summary>

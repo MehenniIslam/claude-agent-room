@@ -4,7 +4,8 @@
  * Tous les mondes partagent la même disposition (postes, obstacles, chemins) :
  * seul l'habillage change, ce qui permet de basculer de monde en direct.
  * Un monde = des textes, une palette (`pal`) et un décor peint une seule fois
- * (`decor`), par-dessus la pièce de base.
+ * (`decor`), par-dessus la pièce de base. `en` traduit le nom, le titre de Claude
+ * et les statuts quand la page est en anglais.
  *
  * Repères (plan logique 320×208, mur du fond en y = 40, mur de gauche en x = 0) :
  *   tableau        mur du fond, x 16–92, hauteur 12–40
@@ -26,6 +27,7 @@
 
   const studio = {
     id: 'studio', name: 'Studio dev', icon: '💻', claudeTitle: 'Orchestrateur',
+    en: { name: 'Dev studio', claudeTitle: 'Orchestrator' },
     glyphs: ['{ }', '=>', '</>', ';', '( )', 'fn', '++', '[ ]', '&&', '#', '==='],
     status: {},
     pal: {
@@ -50,6 +52,7 @@
 
   const opera = {
     id: 'opera', name: 'Opéra', icon: '🎭', claudeTitle: "Chef d'orchestre",
+    en: { name: 'Opera', claudeTitle: 'Conductor', status: { coding: 'Playing their part', reading: 'Reading the score', planning: 'Writing the score', bash: 'Tuning the sound desk', coffee: 'In the dressing room' } },
     glyphs: ['♪', '♫', '♩', '♬', '𝄞', '♭', '♯'],
     status: { coding: 'Joue sa partie', reading: 'Lit la partition', planning: 'Écrit la partition', bash: 'Règle la sono', coffee: 'En loge' },
     pal: {
@@ -75,6 +78,7 @@
 
   const garden = {
     id: 'garden', name: 'Jardin', icon: '🌻', claudeTitle: 'Jardinier en chef',
+    en: { name: 'Garden', claudeTitle: 'Head gardener', status: { coding: 'Planting', reading: 'Checking the greenhouse', planning: 'Drawing the vegetable patch', bash: 'Watering', coffee: 'At the barbecue' } },
     glyphs: ['❀', '✿', '☘', '❁', '♣', '✾'],
     status: { coding: 'Plante', reading: 'Observe la serre', planning: 'Dessine le potager', bash: 'Arrose', coffee: 'Au barbecue' },
     pal: {
@@ -103,6 +107,7 @@
 
   const classroom = {
     id: 'classroom', name: 'Salle de classe', icon: '🏫', claudeTitle: 'Professeur',
+    en: { name: 'Classroom', claudeTitle: 'Teacher', status: { coding: 'Doing exercises', reading: 'Reading in the library', planning: 'Writing on the board', bash: 'Running an experiment', coffee: 'At recess' } },
     glyphs: ['A', 'B', 'C', '1', '2', '3', '+', '=', '?'],
     status: { coding: 'Fait ses exercices', reading: 'Lit à la bibliothèque', planning: 'Écrit au tableau', bash: 'Fait une expérience', coffee: 'En récré' },
     pal: {

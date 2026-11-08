@@ -147,3 +147,50 @@ test('conseiller tokens : liste fermée, contexte sûr, règles idempotentes', a
   assert.equal(fs.readdirSync(dir).filter(n => n.includes('.bak-')).length, 1, 'une seule sauvegarde');
   await wait(1);
 });
+
+test('traduction : dictionnaire complet en français et en anglais', () => {
+  const I18N = require('../public/i18n.js');
+  const fr = Object.keys(I18N.dict.fr).sort(), en = Object.keys(I18N.dict.en).sort();
+  assert.deepEqual(en.filter(k => !fr.includes(k)), [], 'clés anglaises sans équivalent français');
+  assert.deepEqual(fr.filter(k => !en.includes(k)), [], 'clés françaises non traduites en anglais');
+  for (const k of fr) {
+    const vf = I18N.dict.fr[k], ve = I18N.dict.en[k];
+    if (Array.isArray(vf)) { assert.equal(ve.length, vf.length, k); continue; }
+    const vars = x => (x.match(/\{\w+\}/g) || []).sort().join();
+    assert.equal(vars(ve), vars(vf), `variables différentes pour ${k}`);
+  }
+  I18N.lang = 'en';
+  assert.equal(I18N.msg({ message: 'Je lis a.ts', msg: { k: 'read', a: { file: 'a.ts' } } }), 'Reading a.ts');
+  assert.equal(I18N.msg({ message: 'Je lis un fichier', msg: { k: 'read', a: { file: '' } } }), 'Reading a file');
+  assert.equal(I18N.msg({ message: 'Bonjour', en: { message: 'Hello' } }), 'Hello');
+  assert.equal(I18N.msg({ message: 'texte libre' }), 'texte libre');
+  I18N.lang = 'fr';
+  assert.equal(I18N.msg({ message: 'Je lis a.ts', msg: { k: 'read', a: { file: 'a.ts' } } }), 'Je lis a.ts');
+});
+
+test('traduction : clés générées par le serveur, filtrées à l\'entrée', async t => {
+  const n = new HookNormalizer();
+  assert.deepEqual(n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'x.ts' } })[0].msg, { k: 'read', a: { file: 'x.ts' } });
+  assert.deepEqual(n.convert({ hook_event_name: 'Stop' })[0].msg, { k: 'turnDone' });
+  const I18N = require('../public/i18n.js');
+  for (const ev of [
+    { hook_event_name: 'PreToolUse', tool_name: 'Grep', tool_input: { pattern: 'x', path: 'src' } },
+    { hook_event_name: 'PreToolUse', tool_name: 'WebSearch', tool_input: { query: 'q' } },
+    { hook_event_name: 'UserPromptSubmit', prompt: 'hi' },
+    { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_response: { exitCode: 1, stderr: 'boom' } }
+  ]) for (const e of n.convert(ev)) if (e.msg) assert.ok(I18N.dict.en[`msg.${e.msg.k}`], `clé sans traduction : ${e.msg.k}`);
+
+  const { room, port } = await boot();
+  t.after(() => room.close());
+  const r = await request(port, {
+    method: 'POST', path: '/api/event', headers: JSON_HEADERS,
+    body: { type: 'AGENT_MESSAGE', message: 'x', msg: { k: 'read', a: { file: 'token=abcdef123456', 'bad key': 1, x2: 'y' } }, en: { message: 'Hello sk-ant-api03-abcdefghijkl', evil: 1 } }
+  });
+  const e = r.json.events[0];
+  assert.deepEqual(Object.keys(e.msg.a), ['file']);
+  assert.match(e.msg.a.file, /MASQUÉ/);
+  assert.deepEqual(Object.keys(e.en), ['message']);
+  assert.match(e.en.message, /MASQUÉ/);
+  const bad = await request(port, { method: 'POST', path: '/api/event', headers: JSON_HEADERS, body: { type: 'AGENT_MESSAGE', msg: { k: '<script>' } } });
+  assert.equal(bad.json.events[0].msg, undefined);
+});

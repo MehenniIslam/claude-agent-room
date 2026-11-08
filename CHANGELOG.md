@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.0
+
+### Interface en anglais
+- La page existe en **français et en anglais** : elle suit la langue du navigateur ; menu **Langue** ou `?lang=en` / `?lang=fr` pour changer (choix mémorisé).
+- Tous les textes passent par `public/i18n.js` (≈ 200 clés par langue) : menus, journal, bulles, statuts, notifications, fiche agent, aide, export, répliques des agents.
+- Les messages générés par le serveur portent une clé de traduction (`msg`) : chaque écran les affiche dans sa langue. Le texte français reste dans `message` pour les scripts qui utilisent l'API.
+- Les 4 mondes et la démo sont traduits (champ `en` des étapes) ; un émetteur peut fournir sa propre version anglaise via `en`.
+- Ajouter une langue = copier le bloc `en` de `i18n.js`.
+- README en anglais (`README.md`) et en français (`README.fr.md`), avec bannière pixel art.
+
+### Corrections
+- Petits écrans : les 4 menus passent sur deux lignes (plus de défilement horizontal) ; la carte d'accueil ne déborde plus.
+
 ## 1.3.0
 
 ### Économiser des tokens

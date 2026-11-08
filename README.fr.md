@@ -36,6 +36,9 @@ L'assistant pose quatre questions (brancher Claude Code ? proposer les outils d'
 
 Tout se défait : `hooks remove`, `advisor off`, et l'ambiance se change dans la page.
 
+> [!TIP]
+> L'interface parle **français et anglais** : elle suit la langue du navigateur, et le menu **Langue** (ou `?lang=fr` / `?lang=en`) la change.
+
 ## ✨ Fonctionnalités
 
 <table>
@@ -551,7 +554,7 @@ claude-agent-room/
 │   ├── claude-hook.js       # hook stdin → POST (+ masquage, conseiller tokens, mode --jsonl)
 │   └── setup-hooks.js       # installe / retire les hooks
 ├── advisor/                 # conseiller tokens : catalogue vérifié, installation sûre, règles embarquées
-├── public/                  # page web : moteur isométrique, 4 mondes, HUD, polices
+├── public/                  # page web : moteur isométrique, 4 mondes, HUD, traductions (i18n.js), polices
 ├── tui/                     # la chambre dans le terminal
 ├── plugin/agent-room/       # plugin Claude Code : panneau SVG, suivi des fichiers
 ├── .claude-plugin/          # marketplace (rend le dépôt installable avec /plugin)
@@ -591,7 +594,7 @@ npm run dev      # serveur relancé à chaque modification
 npm test         # sécurité, masquage, hooks, coût, journal, conseiller, terminal
 ```
 
-Les contributions sont bienvenues — un nouveau monde, un rôle d'agent, une traduction… Ouvre une issue pour en discuter, ou directement une pull request. Les failles de sécurité se signalent en privé (voir [SECURITY.md](SECURITY.md)). Historique des versions : [CHANGELOG.md](CHANGELOG.md).
+Les contributions sont bienvenues — un nouveau monde, un rôle d'agent, une nouvelle langue (copie le bloc `en` de `public/i18n.js`)… Ouvre une issue pour en discuter, ou directement une pull request. Les failles de sécurité se signalent en privé (voir [SECURITY.md](SECURITY.md)). Historique des versions : [CHANGELOG.md](CHANGELOG.md).
 
 <details>
 <summary><b>Publier sur npm</b></summary>

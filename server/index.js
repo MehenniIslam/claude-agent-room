@@ -56,6 +56,22 @@ function sanitize(raw, seq) {
   if (raw.task && typeof raw.task === 'object' && (raw.task.op === 'add' || raw.task.op === 'update')) {
     e.task = { op: raw.task.op, id: str(raw.task.id, 20), subject: str(raw.task.subject, 200), status: TODO_STATUS.has(raw.task.status) ? raw.task.status : undefined };
   }
+  // Traduction : clé de message (lettres seulement) + 6 valeurs texte au plus, masquées comme le reste.
+  if (raw.msg && typeof raw.msg === 'object' && /^[A-Za-z]{1,30}$/.test(String(raw.msg.k || ''))) {
+    const a = {};
+    if (raw.msg.a && typeof raw.msg.a === 'object') {
+      for (const [k, v] of Object.entries(raw.msg.a).slice(0, 6)) if (/^[A-Za-z]{1,20}$/.test(k) && v != null) a[k] = str(v, 300);
+    }
+    e.msg = { k: raw.msg.k, a };
+  }
+  // Version anglaise fournie par l'émetteur (démo, scripts) : mêmes limites que les champs d'origine.
+  if (raw.en && typeof raw.en === 'object') {
+    const en = {};
+    if (raw.en.message != null) en.message = str(raw.en.message, 4000);
+    if (raw.en.prompt != null) en.prompt = str(raw.en.prompt, 8000);
+    if (Array.isArray(raw.en.todos)) en.todos = raw.en.todos.slice(0, 50).filter(t => t && typeof t === 'object').map(t => ({ content: str(t.content, 200) || '', status: TODO_STATUS.has(t.status) ? t.status : 'pending' }));
+    if (Object.keys(en).length) e.en = en;
+  }
   e.id = seq;
   return e;
 }
