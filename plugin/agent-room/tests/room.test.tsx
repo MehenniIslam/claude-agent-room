@@ -79,3 +79,37 @@ test('le monde choisi change la chambre', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('Claude se lève pour travailler seul, puis revient à son bureau', async ($, on) => {
+  const clock = await setup($, on)
+  await $.tool.call({ tool: 'Read', file_path: '/site/style.css' } as any)
+  let ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as any)
+  let src = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(src).toContain('<animateMotion')
+  expect(src).toContain('Claude · Orchestrateur')
+  await ui.unmount()
+  await clock.advance(8000)
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as any)
+  src = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(src).toContain('<animateMotion') // il revient vers son bureau
+  await ui.unmount()
+  await clock.advance(10000)
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as any)
+  src = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(src).not.toContain('<animateMotion')
+  await ui.unmount()
+})
+
+test('un long diff est replié, puis dépliable', async ($, on) => {
+  await setup($, on)
+  const content = Array.from({ length: 40 }, (_, i) => `ligne ${i + 1}`).join('\n')
+  await $.tool.call({ tool: 'Write', file_path: '/site/long.txt', content } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as any)
+  let code = await ui.find({ type: 'Code' })
+  expect(String(code?.props.source)).toContain('@@ -1,0 +1,10 @@')
+  expect(String(code?.props.source)).not.toContain('ligne 11')
+  await ui.press({ key: 'diff-toggle' })
+  code = await ui.find({ type: 'Code' })
+  expect(String(code?.props.source)).toContain('ligne 40')
+  await ui.unmount()
+})

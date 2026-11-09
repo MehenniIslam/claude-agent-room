@@ -62,6 +62,7 @@ function niceName(description: string, type: string) {
 function moveTo(s: RoomState, a: RoomAgent, station: string, now: number): RoomAgent {
   const spots = STATIONS[station]
   const taken = new Set(s.agents.filter(o => o.key !== a.key && o.station === station && o.status !== 'dead').map(o => o.slot))
+  if (a.key !== 'main' && s.main.station === station && typeof s.main.slot === 'number') taken.add(s.main.slot)
   let slot = a.station === station && a.slot >= 0 ? a.slot : spots.findIndex((_, i) => !taken.has(i))
   let spot = spots[Math.max(0, slot)]
   let x = spot.x, y = spot.y
@@ -85,11 +86,61 @@ function pointAt(pts: Array<[number, number]>, dist: number) {
 }
 const walkMs = (a: RoomAgent) => route(a.fromX, a.fromY, a.x, a.y).dur * 1000
 
+/* ---------------- Claude se déplace aussi ---------------- */
+const MAIN_IDLE_MS = 6000
+function mainAsAgent(s: RoomState): RoomAgent {
+  const m = s.main
+  const x = m.x ?? MAIN_SEAT.x, y = m.y ?? MAIN_SEAT.y
+  return {
+    key: 'main', name: 'Claude', role: 'Orchestrateur', color: '#d97757', hair: '#3d2a22', skin: '#f2c8a0',
+    station: m.station ?? 'desk', slot: m.slot ?? -1, x, y, fromX: m.fromX ?? x, fromY: m.fromY ?? y,
+    movedAt: m.movedAt ?? 0, face: m.face ?? 'down', sit: m.sit ?? true, status: 'work', spawnedAt: 0, task: '',
+  }
+}
+function moveMain(s: RoomState, station: string, now: number): RoomState {
+  const a = mainAsAgent(s)
+  let b: RoomAgent
+  if (station === 'desk') {
+    if (a.station === 'desk') return s
+    const r = route(a.fromX, a.fromY, a.x, a.y)
+    const done = (now - a.movedAt) / 1000 >= r.dur
+    const from = done ? { x: a.x, y: a.y } : pointAt(r.pts, ((now - a.movedAt) / 1000) * 42)
+    b = { ...a, station: 'desk', slot: -1, fromX: Math.round(from.x), fromY: Math.round(from.y), x: MAIN_SEAT.x, y: MAIN_SEAT.y, movedAt: now, face: 'down', sit: true }
+  } else {
+    b = moveTo(s, a, station, now)
+  }
+  if (b === a) return s
+  return { ...s, main: { ...s.main, station: b.station, slot: b.slot, x: b.x, y: b.y, fromX: b.fromX, fromY: b.fromY, movedAt: b.movedAt, face: b.face, sit: b.sit } }
+}
+function mainHome($: any, ms: number) {
+  clearTimers('main')
+  later($, 'main', ms, (s, now) => moveMain(s, 'desk', now))
+}
+
 /* ---------------- diffs ---------------- */
 function linesOf(t: string) { return t === '' ? [] : t.replace(/\n$/, '').split('\n') }
 function hunk(oldText: string, newText: string, startLine: number) {
   const o = linesOf(oldText), n = linesOf(newText)
   return `@@ -${startLine},${o.length} +${startLine},${n.length} @@\n` + o.map(l => '-' + l).join('\n') + (o.length ? '\n' : '') + n.map(l => '+' + l).join('\n')
+}
+/** Coupe un diff à `max` lignes en gardant des en-têtes de hunk exacts. */
+function previewDiff(diff: string, max: number) {
+  const out: string[] = []
+  let kept = 0, cut = false
+  for (const block of diff.split(/\n(?=@@ )/)) {
+    const [head, ...body] = block.split('\n')
+    const m = /^@@ -(\d+),?\d* \+(\d+),?\d* @@/.exec(head ?? '')
+    if (!m) continue
+    const room = max - kept
+    if (room <= 0) { cut = true; break }
+    const lines = body.slice(0, room)
+    if (lines.length < body.length) cut = true
+    const minus = lines.filter(l => l.startsWith('-') || l.startsWith(' ')).length
+    const plus = lines.filter(l => l.startsWith('+') || l.startsWith(' ')).length
+    out.push(`@@ -${m[1]},${minus} +${m[2]},${plus} @@`, ...lines)
+    kept += lines.length
+  }
+  return { text: out.join('\n'), cut }
 }
 const clip = (d: string) => (d.length > 9000 ? d.slice(0, d.lastIndexOf('\n', 9000)) : d)
 
@@ -149,6 +200,7 @@ export const register: Register = on => {
   /* ----- naissance d'un sous-agent ----- */
   on('agent.spawn', async ($, e, next) => {
     const key = e.tool_use_id || `spawn-${Date.now()}`
+    clearTimers('main')
     const role = inferRole(`${e.subagentType} ${e.description} ${e.prompt}`)
     const name = niceName(e.description, e.subagentType)
     await change($, (s, now) => {
@@ -162,6 +214,7 @@ export const register: Register = on => {
       }
       agent.fromX = agent.x; agent.fromY = agent.y
       let t: RoomState = { ...s, seq: s.seq + 1, agents: [...s.agents, agent], main: { ...s.main, bubble: `Je crée ${name} pour : ${short(e.description, 60)}`, bubbleAt: now, activeAt: now } }
+      t = moveMain(t, 'desk', now)
       return feed(t, now, 'Claude', '#d97757', `crée ${name} (${role}) : ${e.description}`)
     })
     later($, key, 2600, (s, now) => setAgent(s, key, a => (a.station === 'spawn' ? moveTo(s, a, ROLE_STATION[a.role] ?? 'code', now) : a)))
@@ -179,7 +232,10 @@ export const register: Register = on => {
   /* ----- fin d'un sous-agent ----- */
   on('turn.complete', async ($, e, next) => {
     const res = await next(e)
-    if (!e.agentId) return res
+    if (!e.agentId) {
+      mainHome($, 1200)
+      return res
+    }
     const st = await read($, room)
     const a = findByLoop(st, e.agentId)
     if (!a || a.status !== 'work') return res
@@ -230,12 +286,16 @@ export const register: Register = on => {
         })
       } else {
         t = { ...t, main: { ...t.main, bubble: `[${tool}] ${what}`, bubbleAt: now, activeAt: now } }
+        const station = TOOL_STATION[tool] ?? (tool.startsWith('mcp__') ? 'library' : undefined)
+        if (station) t = moveMain(t, station, now)
       }
       if (file && (tool === 'Read')) t = touchFile(t, now, { path: file, action: 'lu', by: who, color, add: 0, del: 0 })
       return feed(t, now, who, color, `${tool} · ${what}`)
     })
 
+    if (!sub) clearTimers('main')
     const res = await next(e)
+    if (!sub) mainHome($, MAIN_IDLE_MS)
     const failed = res.deny !== undefined || res.isError === true
     if (failed) {
       await change($, (s, now) => {
@@ -282,6 +342,7 @@ export const register: Register = on => {
     const active = living.filter(a => a.status === 'work').length
     const selected = s.files.find(f => f.path === p.file) ?? s.files.find(f => f.action !== 'lu')
     const edited = s.files.filter(f => f.action !== 'lu')
+    const preview = selected?.diff ? (p.full ? { text: selected.diff, cut: false } : previewDiff(selected.diff, 10)) : undefined
     const setPref = (patch: Partial<RoomPrefs>) => async () => {
       await update($, prefs, old => ({ ...old, ...patch }))
       const next = await read($, prefs)
@@ -319,7 +380,12 @@ export const register: Register = on => {
           </Button>
         ))}
         {selected?.diff && <Text dimColor>Dernier changement de {selected.short} par {selected.by} :</Text>}
-        {selected?.diff && <Code source={selected.diff} format="diff" path={selected.path} wrap="truncate-end" />}
+        {preview && <Code source={preview.text} format="diff" path={selected?.path} wrap="truncate-end" />}
+        {preview && (preview.cut || p.full) && (
+          <Button key="diff-toggle" plain onPress={() => void update($, prefs, old => ({ ...old, full: !old.full }))}>
+            {p.full ? '▴ Replier le diff' : '▾ Voir tout le diff'}
+          </Button>
+        )}
       </Box>
     )
 
@@ -337,11 +403,14 @@ export const register: Register = on => {
       return <Box flexDirection="column">{header}{roster}{filesBlock}{feedBlock}</Box>
     }
     const { Svg } = els
-    const svg = renderScene(s, world.id, now)
+    const cols = (e.props as any)?.bodyColumns ?? 48
+    const width = Math.max(240, Math.min(720, Math.round(cols * 6.5)))
+    const height = Math.round((width * 208) / 320)
+    const svg = renderScene(s, world.id, now, width, height)
     return (
       <Box flexDirection="column">
+        <Svg source={svg} width={width} height={height} alt={`Chambre ${world.name} : Claude et ${living.length} sous-agent(s)`} isInteractive />
         {header}
-        <Svg source={svg} alt={`Chambre ${world.name} : Claude et ${living.length} sous-agent(s)`} isInteractive />
         {roster}
         {filesBlock}
         {feedBlock}

@@ -33,6 +33,15 @@ export type RoomMain = {
   bubble?: string
   bubbleAt?: number
   activeAt?: number
+  station?: string
+  slot?: number
+  x?: number
+  y?: number
+  fromX?: number
+  fromY?: number
+  movedAt?: number
+  face?: RoomFace
+  sit?: boolean
 }
 
 export type RoomFile = {
@@ -61,6 +70,7 @@ export type RoomPrefs = {
   world: string
   ending: string
   file: string
+  full?: boolean
 }
 
 declare module 'claude-code' {

@@ -443,7 +443,7 @@ function bubbleSvg(b: Bubble, placed: Array<{ x: number; y: number; w: number; h
 export const RETIRE = { pump: 0.7, fire: 1.3, ghost: 2.3, end: 4.6 }
 const GUN = { x: 165, y: 88 }
 
-export function renderScene(state: RoomState, worldId: string, now: number) {
+export function renderScene(state: RoomState, worldId: string, now: number, pxW = W * 2, pxH = H * 2) {
   const w = WORLDS[worldId] ?? studio
   const main = state.main
   const mainLook: Look = { color: '#d97757', hair: '#3d2a22', skin: '#f2c8a0', role: 'Orchestrateur', isMain: true }
@@ -453,17 +453,31 @@ export function renderScene(state: RoomState, worldId: string, now: number) {
 
   const sec = (t?: number) => (t ? (now - t) / 1000 : 999)
 
-  // Claude, derrière son bureau
-  back += `<g transform="translate(${MAIN_SEAT.x} ${MAIN_SEAT.y})">${sprite(mainLook, 'down', true)}</g>`
-  if (main.activeAt && sec(main.activeAt) < 3) {
-    fx += `<rect x="138" y="72" width="44" height="14" fill="#78e6ff" opacity="0.18"><animate attributeName="opacity" values="0.25;0.08" dur="${f2(3)}s" begin="${f2(-sec(main.activeAt))}s" fill="freeze"/></rect>`
+  // Claude : assis à son bureau, ou debout à un poste quand il travaille lui-même
+  const mx = main.x ?? MAIN_SEAT.x, my = main.y ?? MAIN_SEAT.y
+  const mr = route(main.fromX ?? mx, main.fromY ?? my, mx, my)
+  const mWalking = sec(main.movedAt) < mr.dur
+  const atDesk = (main.station ?? 'desk') === 'desk' && !mWalking
+  const walkers: RoomAgent[] = [...state.agents]
+  if (atDesk) {
+    back += `<g transform="translate(${MAIN_SEAT.x} ${MAIN_SEAT.y})">${sprite(mainLook, 'down', true)}</g>`
+    if (main.activeAt && sec(main.activeAt) < 3) {
+      fx += `<rect x="138" y="72" width="44" height="14" fill="#78e6ff" opacity="0.18"><animate attributeName="opacity" values="0.25;0.08" dur="${f2(3)}s" begin="${f2(-sec(main.activeAt))}s" fill="freeze"/></rect>`
+    }
+    labels += tag(160, 112, `Claude · ${w.claude}`, '#d97757')
+    if (main.bubble && sec(main.bubbleAt) < 5) bubbles.push({ x: 160, y: 70, text: main.bubble, color: '#d97757', begin: -sec(main.bubbleAt), hold: 4.6 })
+  } else {
+    walkers.push({
+      key: 'main', name: 'Claude', role: w.claude, color: '#d97757', hair: mainLook.hair, skin: mainLook.skin,
+      station: main.station ?? 'desk', slot: main.slot ?? -1, x: mx, y: my, fromX: main.fromX ?? mx, fromY: main.fromY ?? my,
+      movedAt: main.movedAt ?? 0, face: main.face ?? 'down', sit: !!main.sit, status: 'work', spawnedAt: 0, task: '',
+      bubble: main.bubble, bubbleAt: main.bubbleAt,
+    })
   }
-  labels += tag(160, 112, `Claude · ${w.claude}`, '#d97757')
-  if (main.bubble && sec(main.bubbleAt) < 5) bubbles.push({ x: 160, y: 70, text: main.bubble, color: '#d97757', begin: -sec(main.bubbleAt), hold: 4.6 })
 
-  const sorted = [...state.agents].sort((a, b) => a.y - b.y)
+  const sorted = walkers.sort((a, b) => a.y - b.y)
   for (const a of sorted) {
-    const look: Look = { color: a.color, hair: a.hair, skin: a.skin, role: a.role }
+    const look: Look = a.key === 'main' ? mainLook : { color: a.color, hair: a.hair, skin: a.skin, role: a.role }
     const since = sec(a.movedAt)
     const r = route(a.fromX, a.fromY, a.x, a.y)
     const walking = since < r.dur
@@ -516,7 +530,7 @@ export function renderScene(state: RoomState, worldId: string, now: number) {
   const shake = state.agents.find(a => a.status === 'dead' && a.deadAt && sec(a.deadAt) < RETIRE.fire + 0.4)
   const shakeAnim = shake ? `<animateTransform attributeName="transform" type="translate" values="0 0;2 -1;-2 1;1 0;0 0" dur="0.3s" begin="${f2(RETIRE.fire - sec(shake.deadAt))}s"/>` : ''
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W * 2}" height="${H * 2}" shape-rendering="crispEdges" font-family="ui-monospace,Menlo,monospace" style="background:#0c0a12">` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${pxW}" height="${pxH}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" font-family="ui-monospace,Menlo,monospace" style="background:#0c0a12">` +
     `<g>${shakeAnim}${background(w)}${back}${deskLayer(w)}${front}${fx}` +
     `<rect width="${W}" height="${H}" fill="${w.light}" pointer-events="none"/>` +
     `<g shape-rendering="geometricPrecision">${labels}${bub}</g>${gun}</g></svg>`
