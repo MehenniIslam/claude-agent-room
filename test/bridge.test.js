@@ -95,3 +95,58 @@ test('longue session : la mémoire du normalizer reste bornée', () => {
   for (let i = 0; i < 150; i++) n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Task', tool_use_id: `open_${i}`, tool_input: {} });
   assert.ok(n.stack.length <= 100);
 });
+
+test('sous-agent en arrière-plan : le lancement n\'est pas un rapport, SubagentStop clôt la mission', () => {
+  const n = new HookNormalizer();
+  const spawn = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'tu1', tool_input: { description: 'Écrire le CSS', prompt: 'Écris a.css' } });
+  const id = spawn.find(e => e.type === 'SUBAGENT_SPAWN').agentId;
+  const launch = n.convert({ hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'tu1',
+    tool_response: { content: [{ type: 'text', text: 'Async agent launched successfully. (This tool result is internal metadata.)\nagentId: abc123 (internal ID)' }] } });
+  assert.deepEqual(launch, [], 'aucun faux rapport');
+  // ses outils lui sont attribués, ceux de Claude (sans agent_id) restent à Claude
+  const sub = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Write', agent_id: 'abc123', tool_input: { file_path: '/t/a.css', content: 'x' } });
+  assert.equal(sub[0].agentId, id);
+  const main = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/t/b' } });
+  assert.notEqual(main[0].agentId, id);
+  const stop = n.convert({ hook_event_name: 'SubagentStop', agent_id: 'abc123', last_assistant_message: 'a.css prêt.' });
+  assert.equal(stop[0].type, 'SUBAGENT_COMPLETE');
+  assert.equal(stop[0].agentId, id);
+  assert.match(stop[0].message, /a\.css prêt/);
+  assert.doesNotMatch(JSON.stringify([...launch, ...stop]), /internal metadata/);
+});
+
+test('sous-agent classique : la réponse de l\'outil Agent reste son rapport', () => {
+  const n = new HookNormalizer();
+  n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'tu2', tool_input: { description: 'Lire', prompt: 'Lis' } });
+  const done = n.convert({ hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'tu2', tool_response: { content: [{ type: 'text', text: 'Fichier lu.' }] } });
+  assert.equal(done.at(-1).type, 'SUBAGENT_COMPLETE');
+  assert.match(done.at(-1).message, /Fichier lu/);
+});
+
+
+test('sous-agent en arrière-plan : SubagentHandback remet le rapport, la fin d\'un appel revient à son auteur', () => {
+  const n = new HookNormalizer();
+  // Claude commence un appel, puis lance un sous-agent avant que l'appel ne finisse
+  n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_use_id: 'r1', tool_input: { file_path: '/t/x' } });
+  const id = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'tu3', tool_input: { description: 'Relire le CSS', prompt: 'Relis' } })
+    .find(e => e.type === 'SUBAGENT_SPAWN').agentId;
+  const end = n.convert({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_use_id: 'r1', tool_response: { content: [] } });
+  assert.notEqual(end[0].agentId, id, 'la fin du Read de Claude reste à Claude');
+  n.convert({ hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'tu3', tool_response: { content: [{ type: 'text', text: 'Async agent launched successfully.\nagentId: zz9 (internal ID)' }] } });
+  const done = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_id: 'zz9', tool_input: { message: 'CSS relu, line-height ajouté.' } });
+  assert.equal(done[0].type, 'SUBAGENT_COMPLETE');
+  assert.equal(done[0].agentId, id);
+  assert.match(done[0].message, /line-height/);
+  assert.deepEqual(n.convert({ hook_event_name: 'SubagentStop', agent_id: 'zz9', last_assistant_message: 'x' }), [], 'pas de double fin');
+  assert.deepEqual(n.convert({ hook_event_name: 'PostToolUse', tool_name: 'SubagentHandback', agent_id: 'zz9', tool_response: { content: [] } }), [], 'ne revient pas au travail');
+});
+
+test('watch : un appel du transcript principal reste à Claude, même s\'il arrive après un lancement de sous-agent', () => {
+  const n = new HookNormalizer();
+  const id = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'tu4', main_loop: true, tool_input: { description: 'Relire', prompt: 'Relis' } })
+    .find(e => e.type === 'SUBAGENT_SPAWN').agentId;
+  const click = n.convert({ hook_event_name: 'PreToolUse', tool_name: 'mcp__Claude_Browser__computer', tool_use_id: 'c1', main_loop: true, tool_input: {} });
+  assert.notEqual(click[0].agentId, id);
+  const end = n.convert({ hook_event_name: 'PostToolUse', tool_name: 'mcp__Claude_Browser__computer', tool_use_id: 'c1', tool_response: { content: [] } });
+  assert.notEqual(end[0].agentId, id);
+});
