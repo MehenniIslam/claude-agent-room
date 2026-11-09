@@ -1,0 +1,47 @@
+name: 🐛 Bug
+description: Something doesn't work / Quelque chose ne marche pas
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Please run `npx github:MehenniIslam/claude-agent-room doctor` first and paste its output below.
+        Merci ! Lance d'abord `npx github:MehenniIslam/claude-agent-room doctor` et colle le résultat ci-dessous.
+
+        ⚠️ Never paste tokens, API keys or private code. / Ne colle jamais de jeton, de clé API ou de code privé.
+        Security issue? See [SECURITY.md](https://github.com/MehenniIslam/claude-agent-room/blob/main/SECURITY.md) instead.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where? / Où ?
+      options:
+        - Plugin (panel in Claude / panneau dans Claude)
+        - Website (browser / navigateur)
+        - Terminal mode (tui)
+        - Setup / CLI / hooks
+        - Token advisor / conseiller tokens
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect? / Ce qui s'est passé, et ce que tu attendais
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Étapes pour reproduire
+      placeholder: |
+        1. npx github:MehenniIslam/claude-agent-room setup
+        2. …
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `doctor` / Sortie de `doctor`
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: OS, Node and Claude Code versions / Système, versions de Node et de Claude Code
+      placeholder: Windows 11 · Node 22.11 · Claude Code 2.x

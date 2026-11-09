@@ -1,6 +1,6 @@
 {
   "name": "claude-agent-room",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Visualiseur temps réel d'un agent Claude orchestrateur et de ses sous-agents dans une chambre en pixel art.",
   "main": "server/index.js",
   "bin": {
@@ -15,6 +15,7 @@
     "advisor/",
     "public/",
     "README.md",
+    "README.fr.md",
     "LICENSE",
     "SECURITY.md"
   ],

@@ -8,7 +8,7 @@ Visualiseur pixel art d'un agent Claude orchestrateur et de ses sous-agents. Deu
 ## Commandes
 
 - Plugin : `claude plugin validate plugin/agent-room`, `claude plugin test plugin/agent-room` (tests dans `plugin/agent-room/tests/`), `claude plugin validate .` pour le marketplace
-- Version web : `npm install`, `npm test` (node --test, 36 tests), `npm start` → http://localhost:3030, `npm run demo`
+- Version web : `npm install`, `npm test` (node --test, 41 tests ; les 4 tests de `setup.test.js` sont ignorés sous Windows), `npm start` → http://localhost:3030, `npm run demo`
 - Type-check du plugin : une fois le plugin chargé par Claude Code, les types sont posés dans `plugin/agent-room/.claude-plugin/types/` (ignoré par git) et `npx tsc -p plugin/agent-room` fonctionne
 
 ## Tester le plugin en vrai, sur ce Mac
@@ -38,5 +38,7 @@ Visualiseur pixel art d'un agent Claude orchestrateur et de ses sous-agents. Deu
 
 - Après chaque correction : `claude plugin test plugin/agent-room` et `claude plugin validate .` doivent passer ; ajoute un test pour chaque bug corrigé.
 - Monte `version` dans `plugin/agent-room/.claude-plugin/plugin.json` à chaque changement publié, pour que `claude plugin update` le voie.
-- Textes de l'interface en français.
+- Version web, terminal et CLI en **français et en anglais** : aucun texte en dur. Page web et mode terminal → `public/i18n.js` ; CLI, setup, hooks, conseiller, logs du serveur → `bin/i18n.js` ; messages créés par le serveur → une clé `msg` dans `server/normalize.js`. Ajoute chaque nouvelle clé dans les deux langues (un test vérifie que les clés et les `{variables}` sont identiques). Le plugin reste en français pour l'instant.
+- Les tests qui lisent la sortie de la CLI fixent la langue (`AGENT_ROOM_LANG`), sinon ils dépendent de la langue de la machine de CI.
+- Une version = `package.json` (puis `npm install --package-lock-only`), une section en haut du `CHANGELOG.md`, et un tag `vX.Y.Z` poussé : la release GitHub se crée toute seule.
 - Ne jamais committer de secret ; `node_modules/` et `.claude-plugin/types/` restent hors de git.

@@ -1,0 +1,20 @@
+name: ✨ Idea
+description: Suggest a feature, a world, a character… / Propose une fonctionnalité, un monde, un perso…
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would you like to see? / Qu'aimerais-tu voir ?
+      description: The problem first, then your idea. / Le besoin d'abord, puis ton idée.
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is it for? / Pour qui ?
+      options:
+        - Me, while I code / Moi, pendant que je code
+        - A team or a company / Une équipe ou une entreprise
+        - Demos and streams / Démos et streams
+        - Other / Autre

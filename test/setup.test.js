@@ -17,7 +17,7 @@ function runSetup({ installed, port }) {
     `#!/bin/sh\necho "$@" >> "${log}"\nif [ "$1 $2" = "plugin list" ]; then echo "${installed ? '  ❯ agent-room@claude-agent-room' : 'Installed plugins:'}"; fi\nexit 0\n`,
     { mode: 0o755 });
   const child = spawn(process.execPath, [CLI, 'setup', '--no-open', '--port', String(port)], {
-    env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+    env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, AGENT_ROOM_LANG: "fr" },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
@@ -47,7 +47,7 @@ for (const installed of [false, true]) {
       assert.match(calls, /plugin list/);
       if (installed) assert.doesNotMatch(calls, /plugin install/);
       else assert.match(calls, /plugin install agent-room --marketplace MehenniIslam\/claude-agent-room/);
-      assert.doesNotMatch(run.output(), /\[O\/n\]|\[o\/N\]/, 'aucune question posée');
+      assert.doesNotMatch(run.output(), /\[[OY]\/n\]|\[[oy]\/N\]/, 'aucune question posée');
     } finally {
       run.child.kill('SIGTERM');
       fs.rmSync(run.home, { recursive: true, force: true });
@@ -59,7 +59,7 @@ test('setup sans commande « claude » : le site démarre quand même', { skip: 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-room-home-'));
   const port = 3996;
   const child = spawn(process.execPath, [CLI, 'setup', '--no-open', '--port', String(port)], {
-    env: { ...process.env, HOME: home, PATH: path.dirname(process.execPath) },
+    env: { ...process.env, HOME: home, PATH: path.dirname(process.execPath), AGENT_ROOM_LANG: "fr" },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';

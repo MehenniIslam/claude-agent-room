@@ -45,6 +45,58 @@
     { at: 65000, type: 'NOTIFY', kind: 'done', agentId: M, message: "J'ai terminé, à toi de jouer !" }
   ];
 
+  // Version anglaise : chaque étape reçoit un champ `en` (la page l'affiche quand elle est en anglais).
+  const TASKS_EN = {
+    'Concevoir le flux OAuth': 'Design the OAuth flow', 'Cartographier le code d’auth': 'Map the auth code',
+    'Bouton « Se connecter avec GitHub »': '"Sign in with GitHub" button', 'Routes /auth/login et /auth/callback': '/auth/login and /auth/callback routes',
+    'Tests du flux OAuth': 'OAuth flow tests'
+  };
+  const EN = {
+    0: { message: 'New mission: add GitHub OAuth sign-in to the app and cover it with tests.' },
+    1400: { message: 'Splitting the mission into 5 tasks.' },
+    2600: { message: 'design the OAuth flow', prompt: 'Design the GitHub OAuth flow (routes, token storage, session). Return a short 5-step plan.' },
+    5200: { message: 'Drawing the plan on the board: /auth/login → GitHub → /auth/callback → session.' },
+    6400: { message: 'map the existing auth code', prompt: 'Find all the code related to authentication and sessions. List the files and entry points.' },
+    9000: { message: 'grep "session|auth" in src/ …' },
+    12500: { message: 'Reading src/auth.ts: there is only a password login.' },
+    13800: { message: 'Biblio, where is the session middleware?' },
+    16200: { message: 'In src/server/session.ts, based on express-session.' },
+    18200: { message: '"Sign in with GitHub" button', prompt: 'Add the GitHub sign-in button to the login page and handle the callback return.' },
+    19400: { message: '/auth/login and /auth/callback routes', prompt: 'Implement the server-side OAuth routes, the code → token exchange and the session opening.' },
+    21800: { message: 'Checking the GitHub OAuth docs: the state parameter is required.' },
+    22400: { message: 'Plan updated.' },
+    22600: { message: 'Plan ready: 5 steps, anti-CSRF state, token encrypted in the session.' },
+    23800: { message: 'Adding the GitHub button to Login.tsx' },
+    25000: { message: 'Creating src/server/oauth.ts' },
+    28500: { message: 'Back, the callback URL is /auth/callback, right?' },
+    30800: { message: 'Yes, with ?code=…&state=… in the query.' },
+    31500: { message: '3 files involved: auth.ts, session.ts, Login.tsx. GitHub docs summarized.' },
+    33000: { message: 'Wiring the session to the OAuth token.' },
+    34500: { message: 'test the OAuth flow end to end', prompt: 'Write and run the OAuth flow tests (success, invalid state, user refusal).' },
+    37500: { message: 'Writing tests/oauth.test.ts' },
+    41500: { message: 'npm test -- oauth' },
+    44500: { message: '1 failing test: invalid state not rejected' },
+    44700: { message: 'The callback accepts an invalid state!' },
+    46500: { message: "Back, /auth/callback doesn't check the state." },
+    48600: { message: 'Good catch, fixing it right away.' },
+    49000: { message: 'Strict comparison with the state stored in the session.' },
+    50300: { message: 'Plan updated.' },
+    50500: { message: 'GitHub button + callback handling OK.' },
+    53500: { message: 'npm test -- oauth (second run)' },
+    56500: { message: '12 tests passing' },
+    57500: { message: 'OAuth routes in place, state checked, token encrypted.' },
+    59500: { message: '12/12 tests green, including the invalid-state case.' },
+    62500: { message: 'All done.' },
+    63500: { message: 'Mission complete: GitHub OAuth shipped and tested. Thanks, team!' },
+    65000: { message: 'Done — your turn!' }
+  };
+  for (const s of steps) {
+    const en = EN[s.at];
+    if (!en) continue;
+    s.en = { ...en };
+    if (s.todos) s.en.todos = s.todos.map(t => ({ ...t, content: TASKS_EN[t.content] || t.content }));
+  }
+
   const api = { steps, durationMs: steps[steps.length - 1].at + 2000 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.DEMO_SCENARIO = api;

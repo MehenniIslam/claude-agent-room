@@ -20,8 +20,24 @@
       "reviewedSha": "0d30a6db75af",
       "runsCode": false,
       "network": false,
-      "risks": ["Aucun code exécuté : le texte est embarqué dans claude-agent-room (copie relue, licence MIT), rien n'est téléchargé.", "Ajoute quelques tokens d'entrée à chaque tour : utile surtout quand les réponses sont longues."],
-      "install": { "type": "rules", "file": "advisor/rules/token-efficient.md" }
+      "risks": [
+        "Aucun code exécuté : le texte est embarqué dans claude-agent-room (copie relue, licence MIT), rien n'est téléchargé.",
+        "Ajoute quelques tokens d'entrée à chaque tour : utile surtout quand les réponses sont longues."
+      ],
+      "install": {
+        "type": "rules",
+        "file": "advisor/rules/token-efficient.md"
+      },
+      "en": {
+        "name": "Token-saving rules (CLAUDE.md)",
+        "what": "6 short rules in the project CLAUDE.md: re-read only changed files, concise answers, no filler, verify instead of guessing.",
+        "bestFor": "Every project, especially when Claude writes a lot.",
+        "savings": "-40% on the computingforgeeks benchmark (one task, Sonnet 4.5)",
+        "risks": [
+          "No code runs: the text is bundled with claude-agent-room (reviewed copy, MIT license), nothing is downloaded.",
+          "Adds a few input tokens on every turn: mostly useful when answers are long."
+        ]
+      }
     },
     {
       "id": "caveman",
@@ -36,8 +52,24 @@
       "reviewedSha": "c310c9d300df",
       "runsCode": true,
       "network": false,
-      "risks": ["Ajoute des hooks SessionStart et SubagentStart qui lancent un script Node local du plugin.", "Les réponses deviennent très laconiques : à désactiver si tu préfères des explications détaillées."],
-      "install": { "type": "plugin", "plugin": "caveman", "marketplace": "JuliusBrussee/caveman" }
+      "risks": [
+        "Ajoute des hooks SessionStart et SubagentStart qui lancent un script Node local du plugin.",
+        "Les réponses deviennent très laconiques : à désactiver si tu préfères des explications détaillées."
+      ],
+      "install": {
+        "type": "plugin",
+        "plugin": "caveman",
+        "marketplace": "JuliusBrussee/caveman"
+      },
+      "en": {
+        "what": "Compresses Claude's prose (fewer sentences, same technical terms, code and errors untouched).",
+        "bestFor": "Chatty sessions, code reviews, Q&A.",
+        "savings": "-37 to -38% (43% fewer output tokens) on the computingforgeeks benchmark",
+        "risks": [
+          "Adds SessionStart and SubagentStart hooks that run a local Node script from the plugin.",
+          "Answers become very terse: turn it off if you prefer detailed explanations."
+        ]
+      }
     },
     {
       "id": "context7",
@@ -52,8 +84,24 @@
       "reviewedSha": "078c0c731d19",
       "runsCode": false,
       "network": true,
-      "risks": ["Serveur MCP distant (mcp.context7.com, Upstash) : les noms de bibliothèques et les sujets recherchés y sont envoyés, pas ton code.", "Ne mets pas de secrets dans les questions de documentation."],
-      "install": { "type": "plugin", "plugin": "context7", "marketplace": "upstash/context7" }
+      "risks": [
+        "Serveur MCP distant (mcp.context7.com, Upstash) : les noms de bibliothèques et les sujets recherchés y sont envoyés, pas ton code.",
+        "Ne mets pas de secrets dans les questions de documentation."
+      ],
+      "install": {
+        "type": "plugin",
+        "plugin": "context7",
+        "marketplace": "upstash/context7"
+      },
+      "en": {
+        "what": "Gives Claude up-to-date library docs (React, Next.js, Tailwind…): fewer failed attempts and fixes.",
+        "bestFor": "Building a website or an app with recent frameworks.",
+        "savings": "Not quantified: mainly avoids round trips caused by outdated APIs",
+        "risks": [
+          "Remote MCP server (mcp.context7.com, Upstash): library names and searched topics are sent there, not your code.",
+          "Don't put secrets in documentation questions."
+        ]
+      }
     },
     {
       "id": "context-mode",
@@ -68,8 +116,24 @@
       "reviewedSha": "ee0a1f6058f6",
       "runsCode": true,
       "network": false,
-      "risks": ["Exécute du code dans un bac à sable local : surface plus large que les autres.", "Licence Elastic 2.0 : usage interne libre, revente en service interdite."],
-      "install": { "type": "plugin", "plugin": "context-mode", "marketplace": "mksglu/context-mode" }
+      "risks": [
+        "Exécute du code dans un bac à sable local : surface plus large que les autres.",
+        "Licence Elastic 2.0 : usage interne libre, revente en service interdite."
+      ],
+      "install": {
+        "type": "plugin",
+        "plugin": "context-mode",
+        "marketplace": "mksglu/context-mode"
+      },
+      "en": {
+        "what": "Stores large tool outputs (logs, browser snapshots, big files) in a local database and only returns a summary to Claude.",
+        "bestFor": "Projects with lots of logs, tests or automated browsing.",
+        "savings": "50 to 90% claimed when tools produce a lot of text (publisher figure, not independently measured)",
+        "risks": [
+          "Runs code in a local sandbox: a wider surface than the others.",
+          "Elastic 2.0 license: free for internal use, reselling as a service is forbidden."
+        ]
+      }
     },
     {
       "id": "token-savior",
@@ -84,7 +148,10 @@
       "reviewedSha": "770e055defd1",
       "runsCode": true,
       "network": false,
-      "risks": ["Serveur MCP Python local, à installer toi-même dans un environnement virtuel (version épinglée ci-dessous).", "Peu utile sur un petit projet ou du JavaScript non typé ; le profil complet ajoute ~11 000 tokens de description d'outils."],
+      "risks": [
+        "Serveur MCP Python local, à installer toi-même dans un environnement virtuel (version épinglée ci-dessous).",
+        "Peu utile sur un petit projet ou du JavaScript non typé ; le profil complet ajoute ~11 000 tokens de description d'outils."
+      ],
       "install": {
         "type": "manual",
         "steps": [
@@ -92,13 +159,43 @@
           "~/.claude/agent-room/venv-token-savior/bin/pip install 'token-savior-recall[mcp]==4.24.0'",
           "claude mcp add token-savior --scope user -e TOKEN_SAVIOR_PROFILE=core -e WORKSPACE_ROOTS=<chemin du projet> -- ~/.claude/agent-room/venv-token-savior/bin/token-savior"
         ]
+      },
+      "en": {
+        "what": "Replaces whole-file reads with symbol-by-symbol navigation (functions, classes).",
+        "bestFor": "Big typed repositories (TypeScript, typed Python, Go, Rust).",
+        "savings": "-43% on the computingforgeeks benchmark (the best measured score)",
+        "risks": [
+          "Local Python MCP server, to install yourself in a virtual environment (pinned version below).",
+          "Of little use on a small project or untyped JavaScript; the full profile adds ~11,000 tokens of tool descriptions."
+        ]
       }
     }
   ],
   "notRecommended": [
-    { "name": "RTK", "repo": "rtk-ai/rtk", "why": "Résultats indépendants mitigés : aucun gain mesuré par computingforgeeks, coût +7,6 % au nouveau test de JetBrains ; installation par `curl | sh`." },
-    { "name": "claude-mem", "repo": "thedotmack/claude-mem", "why": "Mémoire persistante entre sessions : pas de gain chiffré, et des données de projet stockées durablement." },
-    { "name": "alexgreensh/token-optimizer", "repo": "alexgreensh/token-optimizer", "why": "Licence non commerciale (PolyForm Noncommercial) : interdit en entreprise sans licence." },
-    { "name": "claude-context", "repo": "zilliztech/claude-context", "why": "Demande des clés OpenAI et Milvus payantes ; disproportionné pour un site." }
-  ]
+    {
+      "name": "RTK",
+      "repo": "rtk-ai/rtk",
+      "why": "Résultats indépendants mitigés : aucun gain mesuré par computingforgeeks, coût +7,6 % au nouveau test de JetBrains ; installation par `curl | sh`.",
+      "why_en": "Mixed independent results: no gain measured by computingforgeeks, +7.6% cost in JetBrains' rerun; installed via `curl | sh`."
+    },
+    {
+      "name": "claude-mem",
+      "repo": "thedotmack/claude-mem",
+      "why": "Mémoire persistante entre sessions : pas de gain chiffré, et des données de projet stockées durablement.",
+      "why_en": "Persistent memory across sessions: no measured gain, and project data stored durably."
+    },
+    {
+      "name": "alexgreensh/token-optimizer",
+      "repo": "alexgreensh/token-optimizer",
+      "why": "Licence non commerciale (PolyForm Noncommercial) : interdit en entreprise sans licence.",
+      "why_en": "Non-commercial license (PolyForm Noncommercial): not allowed in a company without a license."
+    },
+    {
+      "name": "claude-context",
+      "repo": "zilliztech/claude-context",
+      "why": "Demande des clés OpenAI et Milvus payantes ; disproportionné pour un site.",
+      "why_en": "Requires paid OpenAI and Milvus keys; overkill for a website."
+    }
+  ],
+  "policy_en": "Closed list, reviewed by hand: license, activity, hook and MCP server contents, reviewed commit. Nothing gets installed without an explicit yes; no `curl | sh` command; no API key asked."
 }

@@ -4,14 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# Un nouveau push sur la même branche annule le passage précédent.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Node ${{ matrix.node }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -31,8 +38,45 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Vérifier la syntaxe
-        run: node --check public/app.js && node --check public/worlds.js && node --check bin/cli.js && node --check tui/index.js
+        run: node --check public/app.js && node --check public/i18n.js && node --check public/worlds.js && node --check bin/cli.js && node --check bin/i18n.js && node --check tui/index.js
       - name: Audit des dépendances
         run: npm audit --omit=dev --audit-level=high
-      - name: Le CLI démarre
-        run: node bin/cli.js --version
+      - name: Le CLI démarre, dans les deux langues
+        run: node bin/cli.js --version && node bin/cli.js --help --lang en && node bin/cli.js --help --lang fr
+
+  plugin:
+    name: Plugin Claude (validate + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Valider le marketplace et le plugin
+        run: claude plugin validate . && claude plugin validate plugin/agent-room
+      - name: Tests du plugin
+        run: claude plugin test plugin/agent-room
+
+  package:
+    name: Paquet npm complet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Le paquet installé par npx doit contenir tout ce que la CLI charge.
+      - name: Contenu du paquet
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const files = require('./pack.json')[0].files.map(f => f.path);
+            const need = ['bin/cli.js', 'bin/i18n.js', 'bridge/claude-hook.js', 'bridge/setup-hooks.js', 'server/index.js', 'tui/index.js', 'advisor/catalog.json', 'public/index.html', 'public/i18n.js'];
+            const missing = need.filter(f => !files.includes(f));
+            if (missing.length) { console.error('Absents du paquet :', missing); process.exit(1); }
+            console.log(files.length + ' fichiers, rien ne manque');
+          "

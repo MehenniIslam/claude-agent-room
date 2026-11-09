@@ -23,6 +23,7 @@ const { loadConfig, saveConfig } = require('./config');
 const { redact } = require('../bridge/claude-hook.js');
 const demo = require('../public/demo-scenario.js');
 const { version } = require('../package.json');
+const { t } = require('../bin/i18n');
 
 const HISTORY_MAX = 400;
 const MAX_CLIENTS = 32;
@@ -55,6 +56,22 @@ function sanitize(raw, seq) {
   }
   if (raw.task && typeof raw.task === 'object' && (raw.task.op === 'add' || raw.task.op === 'update')) {
     e.task = { op: raw.task.op, id: str(raw.task.id, 20), subject: str(raw.task.subject, 200), status: TODO_STATUS.has(raw.task.status) ? raw.task.status : undefined };
+  }
+  // Traduction : clé de message (lettres seulement) + 6 valeurs texte au plus, masquées comme le reste.
+  if (raw.msg && typeof raw.msg === 'object' && /^[A-Za-z]{1,30}$/.test(String(raw.msg.k || ''))) {
+    const a = {};
+    if (raw.msg.a && typeof raw.msg.a === 'object') {
+      for (const [k, v] of Object.entries(raw.msg.a).slice(0, 6)) if (/^[A-Za-z]{1,20}$/.test(k) && v != null) a[k] = str(v, 300);
+    }
+    e.msg = { k: raw.msg.k, a };
+  }
+  // Version anglaise fournie par l'émetteur (démo, scripts) : mêmes limites que les champs d'origine.
+  if (raw.en && typeof raw.en === 'object') {
+    const en = {};
+    if (raw.en.message != null) en.message = str(raw.en.message, 4000);
+    if (raw.en.prompt != null) en.prompt = str(raw.en.prompt, 8000);
+    if (Array.isArray(raw.en.todos)) en.todos = raw.en.todos.slice(0, 50).filter(t => t && typeof t === 'object').map(t => ({ content: str(t.content, 200) || '', status: TODO_STATUS.has(t.status) ? t.status : 'pending' }));
+    if (Object.keys(en).length) e.en = en;
   }
   e.id = seq;
   return e;
@@ -309,14 +326,14 @@ function start(opts = {}) {
       if (err.code === 'EADDRINUSE') {
         if (await probeExisting(port)) {
           const url = `http://localhost:${port}`;
-          console.log(`\n  🛋️  La chambre tourne déjà → ${url}\n`);
+          console.log(`\n  ${t('server.alreadyRunning', { url })}\n`);
           if (opts.open) openBrowser(url);
           return resolve(null);
         }
-        console.error(`\n✖ Le port ${port} est déjà utilisé par un autre programme.`);
-        console.error(`  Choisis-en un autre : npx github:MehenniIslam/claude-agent-room --port 3031  (et AGENT_ROOM_PORT=3031 pour le hook)\n`);
+        console.error(`\n${t('server.portBusy', { port })}`);
+        console.error(`${t('server.portBusyFix')}\n`);
       } else if (err.code === 'EACCES') {
-        console.error(`\n✖ Accès refusé au port ${port}. Essaie un port au-dessus de 1024.\n`);
+        console.error(`\n${t('server.portDenied', { port })}\n`);
       }
       reject(err);
     });
@@ -325,15 +342,15 @@ function start(opts = {}) {
       const base = `http://localhost:${port}`;
       const url = room.guard.token ? `${base}/?token=${encodeURIComponent(room.guard.token)}` : base;
       if (!opts.quiet) {
-        console.log(`\n  🛋️  Claude Agent Room v${version} en ligne → ${url}`);
-        console.log(`  📡 Événements : POST ${base}/api/event   |   WebSocket ws://localhost:${port}/ws`);
-        console.log(`  🎬 Démo       : npx github:MehenniIslam/claude-agent-room demo   (ou le bouton dans la page)`);
+        console.log(`\n  ${t('server.online', { version, url })}`);
+        console.log(`  ${t('server.events', { base, port })}`);
+        console.log(`  ${t('server.demo')}`);
         if (room.guard.exposed) {
-          console.log(`\n  ⚠️  Serveur exposé sur le réseau (${host}). Un jeton est exigé pour l'API et le WebSocket.`);
-          if (room.guard.generated) console.log(`     Jeton généré pour cette session : ${room.guard.token}`);
-          console.log('     Pour le hook : AGENT_ROOM_TOKEN=<jeton> et AGENT_ROOM_URL=http://<cette-machine>:' + port + '/api/event');
+          console.log(`\n  ${t('server.exposed', { host })}`);
+          if (room.guard.generated) console.log(`  ${t('server.tokenGenerated', { token: room.guard.token })}`);
+          console.log(`  ${t('server.hookHint', { port })}`);
         }
-        console.log('  Ctrl+C pour arrêter.\n');
+        console.log(`  ${t('server.stop')}\n`);
       }
       if (opts.open) openBrowser(url);
       resolve(room);
