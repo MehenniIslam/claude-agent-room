@@ -131,8 +131,10 @@ function run(argv = process.argv.slice(2)) {
     console.log(`✅ Hooks installés dans ${settingsPath}`);
     console.log(`   Commande   : ${command}`);
     console.log(`   Événements : ${ALL_EVENTS.join(', ')}`);
-    console.log('\n   1) Lance la chambre : npm start   (http://localhost:3030)');
-    console.log('   2) Relance Claude Code (ou /hooks pour vérifier) et donne-lui une tâche avec des sous-agents.');
+    if (!args.has('--quiet')) {
+      console.log('\n   1) Lance la chambre : npm start   (http://localhost:3030)');
+      console.log('   2) Relance Claude Code (ou /hooks pour vérifier) et donne-lui une tâche avec des sous-agents.');
+    }
   }
   return true;
 }
