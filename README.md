@@ -45,7 +45,11 @@ Prérequis : [Node.js](https://nodejs.org) 18.17 ou plus récent (`node -v` pour
 npx github:MehenniIslam/claude-agent-room setup
 ```
 
-L'assistant te pose 4 questions (brancher Claude Code, proposer les outils d'économie de tokens, ajouter les règles d'économie au projet, ambiance fun ou pro), puis ouvre la chambre. Chaque étape se défait : `hooks remove`, `advisor off`, et l'ambiance se change dans la page.
+Aucune question : la commande branche Claude Code au site (hooks, avec une sauvegarde de `~/.claude/settings.json`), installe le panneau Agent Room dans Claude s'il n'y est pas, puis ouvre la chambre sur **http://localhost:3030**. Garde ce terminal ouvert : il fait tourner le site. Relance Claude Code (ou tape `/reload-plugins`) pour qu'il voie les nouveaux réglages.
+
+Idéal sur plusieurs écrans : le code sur l'un, le site (vue 3D, bouton **Plein écran**) sur un autre, Claude et son panneau sur le troisième. Le panneau a un lien **🌐 Vue 3D sur le site** et un bouton **⤢ Chambre seule**.
+
+Tu préfères choisir chaque étape (outils d'économie de tokens, ambiance fun ou pro) ? `setup --guide`. Tout se défait : `hooks remove`, `claude plugin uninstall agent-room`.
 
 Sinon, trois options à la carte, de la plus simple à la plus complète.
 
