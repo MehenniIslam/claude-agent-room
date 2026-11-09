@@ -298,10 +298,13 @@ async function jsonlMode(target) {
     const content = rec.message && Array.isArray(rec.message.content) ? rec.message.content : [];
     const agentFromFile = /agent-([\w-]+)\.jsonl$/.exec(file);
     const agent_id = rec.isSidechain ? (rec.agentId || (agentFromFile && agentFromFile[1])) : undefined;
+    // Le transcript principal est celui de Claude : ses appels ne sont jamais ceux d'un sous-agent.
+    const main_loop = !rec.isSidechain && !agentFromFile;
     for (const c of content) {
       if (c.type === 'tool_use') {
+        if (toolNames.has(c.id)) continue; // le même message peut être réécrit plusieurs fois
         rememberTool(c.id, c.name);
-        await send({ hook_event_name: 'PreToolUse', session_id: rec.sessionId, tool_name: c.name, tool_input: c.input, tool_use_id: c.id, agent_id });
+        await send({ hook_event_name: 'PreToolUse', session_id: rec.sessionId, tool_name: c.name, tool_input: c.input, tool_use_id: c.id, agent_id, main_loop });
       } else if (c.type === 'tool_result') {
         const name = toolNames.get(c.tool_use_id);
         if (!name) continue;
