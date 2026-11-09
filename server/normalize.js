@@ -103,6 +103,20 @@ function extractText(resp) {
   return '';
 }
 
+/**
+ * Réponse de l'outil Agent quand le sous-agent part en arrière-plan : ce n'est pas son rapport.
+ * Renvoie { agentRef } (l'agent_id annoncé, s'il y est) ou null.
+ */
+function asyncLaunch(resp) {
+  if (resp && typeof resp === 'object' && (resp.status === 'async_launched' || resp.isAsync === true)) {
+    return { agentRef: resp.agentId || resp.agent_id || null };
+  }
+  const text = extractText(resp);
+  if (!/async agent launched|agent is working in the background|running in the background/i.test(text)) return null;
+  const m = /agentId:\s*([\w-]+)/.exec(text);
+  return { agentRef: m ? m[1] : null };
+}
+
 function isFailure(resp) {
   if (!resp || typeof resp !== 'object') return false;
   return Boolean(resp.is_error || resp.isError || resp.error || resp.interrupted ||
@@ -121,6 +135,7 @@ class HookNormalizer {
     this.byToolUse = new Map();   // tool_use_id -> sub id
     this.byAgentRef = new Map();  // agent_id Claude Code -> sub id
     this.stack = [];              // sous-agents actifs, ordre de création
+    this.callers = new Map();     // tool_use_id -> qui a commencé l'appel
   }
 
   isRawHook(body) {
@@ -131,7 +146,8 @@ class HookNormalizer {
     if (agentRef && this.byAgentRef.has(agentRef)) return this.byAgentRef.get(agentRef);
     for (let i = this.stack.length - 1; i >= 0; i--) {
       const s = this.subs.get(this.stack[i]);
-      if (s && !s.done) return s.id;
+      // Un sous-agent dont on connaît l'agent_id signe ses appels : un appel sans agent_id n'est pas le sien.
+      if (s && !s.done && !s.agentRef) return s.id;
     }
     return MAIN_ID;
   }
@@ -201,6 +217,16 @@ class HookNormalizer {
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && SPAWN_TOOLS.has(tool)) {
       const id = (p.tool_use_id && this.byToolUse.get(p.tool_use_id)) || this.stack[0];
       if (!id || !this.subs.has(id) || this.subs.get(id).done) return [];
+      const launched = asyncLaunch(p.tool_response);
+      if (launched && ev === 'PostToolUse') {
+        // Sous-agent lancé en arrière-plan : il travaille encore, son rapport viendra avec SubagentStop.
+        const sub = this.subs.get(id);
+        if (launched.agentRef && !sub.agentRef) {
+          sub.agentRef = launched.agentRef;
+          this.byAgentRef.set(launched.agentRef, id);
+        }
+        return [];
+      }
       this.finish(id);
       const failed = ev === 'PostToolUseFailure' || isFailure(p.tool_response);
       const out = [];
@@ -227,14 +253,31 @@ class HookNormalizer {
       return [{ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(p.last_assistant_message || 'Mission terminée.', 180) }];
     }
 
+    if (ev === 'PreToolUse' && tool === 'SubagentHandback') {
+      // Un sous-agent en arrière-plan remet son rapport par cet outil : c'est sa fin de mission.
+      const id = p.agent_id && this.byAgentRef.get(p.agent_id);
+      if (!id || !this.subs.has(id) || this.subs.get(id).done) return [];
+      this.finish(id);
+      return [{ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(input.message || 'Mission terminée.', 180) }];
+    }
+
     if (ev === 'PreToolUse' && tool) {
-      const agentId = this.activeSub(p.agent_id);
+      const agentId = p.main_loop === true ? MAIN_ID : this.activeSub(p.agent_id);
+      if (p.tool_use_id) {
+        this.callers.set(p.tool_use_id, agentId);
+        if (this.callers.size > 2000) this.callers.delete(this.callers.keys().next().value);
+      }
       const d = describeTool(tool, input);
       return [{ ...base, type: 'TOOL_START', agentId, tool, file: d.file, message: d.message, ...toolExtras(tool, input) }];
     }
 
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && tool) {
-      const agentId = this.activeSub(p.agent_id);
+      // La fin d'un appel revient à celui qui l'a commencé, même si un sous-agent est né entre-temps.
+      const started = p.tool_use_id && this.callers.get(p.tool_use_id);
+      if (p.tool_use_id) this.callers.delete(p.tool_use_id);
+      const agentId = started && (started === MAIN_ID || this.subs.has(started)) ? started : this.activeSub(p.agent_id);
+      // Un sous-agent qui a déjà remis son rapport (SubagentHandback) ne doit pas « revenir » au travail.
+      if (tool === 'SubagentHandback' || (agentId !== MAIN_ID && this.subs.get(agentId)?.done)) return [];
       const failed = ev === 'PostToolUseFailure' || isFailure(p.tool_response);
       const out = [{ ...base, type: 'TOOL_END', agentId, tool, success: !failed, message: failed ? short(extractText(p.tool_response) || p.error || 'Échec', 120) : '' }];
       if (failed) out.push({ ...base, type: 'ERROR', agentId, tool, message: `${tool} a échoué : ${short(extractText(p.tool_response) || p.error, 100)}` });
@@ -245,4 +288,4 @@ class HookNormalizer {
   }
 }
 
-module.exports = { HookNormalizer, MAIN_ID, inferRole, short, makeDiff, toolExtras };
+module.exports = { HookNormalizer, MAIN_ID, inferRole, short, makeDiff, toolExtras, asyncLaunch };
