@@ -126,7 +126,7 @@ test('ambiance fun / pro partagée par le serveur', async t => {
 });
 
 test('conseiller tokens : liste fermée, contexte sûr, règles idempotentes', async () => {
-  assert.throws(() => advisor.resolveIds(['rtk']), /inconnu/);
+  assert.throws(() => advisor.resolveIds(['rtk']), /inconnu : "rtk"|Unknown tool: "rtk"/);
   assert.deepEqual(advisor.resolveIds(['essentiel']), ['rules', 'caveman', 'context7']);
   const ctx = buildAdvisorContext(advisor.CATALOG, 'fr');
   assert.match(ctx, /UNE fois/);

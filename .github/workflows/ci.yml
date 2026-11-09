@@ -37,6 +37,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # Les machines de CI sont en anglais : un passage en français attrape les tests liés à la langue.
+      - name: Tests en français
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm test
+        env:
+          AGENT_ROOM_LANG: fr
       - name: Vérifier la syntaxe
         run: node --check public/app.js && node --check public/i18n.js && node --check public/worlds.js && node --check bin/cli.js && node --check bin/i18n.js && node --check tui/index.js
       - name: Audit des dépendances
