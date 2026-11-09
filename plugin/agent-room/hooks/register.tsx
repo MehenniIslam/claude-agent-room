@@ -24,6 +24,10 @@ const LABEL: Record<string, string> = { planning: 'Planifie', reading: 'Lit des 
 const RETIRE_DELAY = 4500
 // Au-delà, les plus anciens agents en pause quittent la chambre : le SVG reste sous la limite de taille.
 const MAX_LOUNGE = 6
+// Taille propre du SVG : la surface le réduit à la largeur du panneau, jamais au-delà.
+const SCENE_PX = { w: 1280, h: 832 }
+// La version web (vue 3D isométrique), lancée par « npx github:MehenniIslam/claude-agent-room setup ».
+let site = 'http://localhost:3030'
 const timers = new Map<string, Array<{ cancel: () => void }>>()
 
 function capLounge(s: RoomState): RoomState {
@@ -37,6 +41,13 @@ function capLounge(s: RoomState): RoomState {
 const short = (s: string, n: number) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n - 1) + '…' : t
+}
+/** Coupe au milieu pour garder le début du dossier et l'extension visibles. */
+const fit = (s: string, n: number) => {
+  const t = String(s ?? '')
+  if (t.length <= n) return t
+  const tail = Math.ceil((n - 1) * 0.6)
+  return t.slice(0, n - 1 - tail) + '…' + t.slice(-tail)
 }
 const shortPath = (p: string) => {
   const parts = String(p).split(/[\\/]/).filter(Boolean)
@@ -188,6 +199,8 @@ export const register: Register = on => {
     await $.command.register({ name: 'agent-room', description: 'Ouvre la chambre des agents Claude dans un panneau' })
     const saved = (await $.store.get('prefs')) as Partial<RoomPrefs> | undefined
     if (saved && typeof saved === 'object') await update($, prefs, p => ({ ...p, ...saved, file: '' }))
+    const port = await $.env.get('AGENT_ROOM_PORT')
+    site = port && /^\d{2,5}$/.test(port) ? `http://localhost:${port}` : 'http://localhost:3030'
     void $.ui.open({ id: PANE, title: 'Agent Room' })
     return next(e)
   })
@@ -266,7 +279,8 @@ export const register: Register = on => {
     let existed = true
     if (file && (tool === 'Edit' || tool === 'MultiEdit' || tool === 'Write')) {
       try { existed = await $.fs.exists(file) } catch { existed = true }
-      if (existed && tool !== 'Write') { try { before = await $.fs.read(file) } catch { before = '' } }
+      // Write aussi : réécrire un fichier existant retire ses anciennes lignes.
+      if (existed) { try { before = await $.fs.read(file) } catch { before = '' } }
     }
     const st = await read($, room)
     const sub = findByLoop(st, e.agentId)
@@ -309,17 +323,26 @@ export const register: Register = on => {
       let add = 0, del = 0
       if (tool === 'Write') {
         const content = String(input.content ?? '')
-        diff = hunk('', content, 1)
+        const old = existed ? before : ''
+        diff = hunk(old, content, 1)
         add = linesOf(content).length
+        del = linesOf(old).length
       } else {
-        const edits: Array<{ old_string: string; new_string: string }> = tool === 'Edit' ? [input] : input.edits ?? []
-        diff = edits.map(ed => {
-          const idx = before.indexOf(ed.old_string)
-          const line = idx >= 0 ? before.slice(0, idx).split('\n').length : 1
-          add += linesOf(ed.new_string).length
-          del += linesOf(ed.old_string).length
-          return hunk(ed.old_string, ed.new_string, line)
-        }).join('\n')
+        const edits: Array<{ old_string: string; new_string: string; replace_all?: boolean }> = tool === 'Edit' ? [input] : input.edits ?? []
+        // Les modifications s'appliquent l'une après l'autre : chacune se cherche dans le texte déjà modifié.
+        let cur = before
+        const hunks: string[] = []
+        for (const ed of edits) {
+          const oldS = String(ed.old_string ?? ''), newS = String(ed.new_string ?? '')
+          const at: number[] = []
+          for (let i = oldS ? cur.indexOf(oldS) : -1; i >= 0 && (ed.replace_all || at.length === 0); i = cur.indexOf(oldS, i + oldS.length)) at.push(i)
+          const times = Math.max(1, at.length)
+          add += linesOf(newS).length * times
+          del += linesOf(oldS).length * times
+          for (const i of at.length ? at : [-1]) hunks.push(hunk(oldS, newS, i >= 0 ? cur.slice(0, i).split('\n').length : 1))
+          if (at.length) cur = ed.replace_all ? cur.split(oldS).join(newS) : cur.slice(0, at[0]) + newS + cur.slice(at[0] + oldS.length)
+        }
+        diff = hunks.join('\n')
       }
       const action = tool === 'Write' && !existed ? 'créé' : 'modifié'
       await change($, (s, now) => {
@@ -333,7 +356,7 @@ export const register: Register = on => {
   /* ----- le panneau ----- */
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e) as any
-    const { Box, Text, Button, Select, Code } = els
+    const { Box, Text, Button, Select, Code, Link } = els
     const s = { ...EMPTY, ...(await read($, room)) }
     const p = await read($, prefs)
     const now = await $.clock.now()
@@ -346,7 +369,7 @@ export const register: Register = on => {
     const setPref = (patch: Partial<RoomPrefs>) => async () => {
       await update($, prefs, old => ({ ...old, ...patch }))
       const next = await read($, prefs)
-      await $.store.set('prefs', { world: next.world, ending: next.ending })
+      await $.store.set('prefs', { world: next.world, ending: next.ending, big: !!next.big })
     }
 
     const header = (
@@ -363,7 +386,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Text bold>Claude · {world.claude} <Text dimColor>{active} sous-agent{active > 1 ? 's' : ''} au travail</Text></Text>
         {living.map(a => (
-          <Text key={a.key}>
+          <Text key={a.key} wrap="truncate-end">
             <Text color={a.color}>■</Text> {a.name} <Text dimColor>{a.role}</Text> · {statusText(a, world.status, now)}
           </Text>
         ))}
@@ -376,10 +399,10 @@ export const register: Register = on => {
         {edited.length === 0 && <Text dimColor>Aucun fichier modifié pour l'instant. Demande à Claude de créer un site ou de changer ton projet.</Text>}
         {edited.slice(0, 10).map(f => (
           <Button key={`f:${f.path}`} plain onPress={() => void update($, prefs, old => ({ ...old, file: f.path }))}>
-            {selected?.path === f.path ? '▸ ' : '  '}{f.action === 'créé' ? '✚' : '✎'} {f.short} <Text color="green">+{f.add}</Text> <Text color="red">−{f.del}</Text> <Text dimColor>· {f.by}</Text>
+            {selected?.path === f.path ? '▸ ' : '  '}{f.action === 'créé' ? '✚' : '✎'} {fit(f.short, 40)} <Text color="green">+{f.add}</Text> <Text color="red">−{f.del}</Text> <Text dimColor>· {f.by}</Text>
           </Button>
         ))}
-        {selected?.diff && <Text dimColor>Dernier changement de {selected.short} par {selected.by} :</Text>}
+        {selected?.diff && <Text dimColor wrap="truncate-end">Dernier changement de {fit(selected.short, 40)} par {selected.by} :</Text>}
         {preview && <Code source={preview.text} format="diff" path={selected?.path} wrap="truncate-end" />}
         {preview && (preview.cut || p.full) && (
           <Button key="diff-toggle" plain onPress={() => void update($, prefs, old => ({ ...old, full: !old.full }))}>
@@ -399,24 +422,62 @@ export const register: Register = on => {
       </Box>
     )
 
+    const siteLink = (
+      <Text key="site" wrap="truncate-end">🌐 <Link href={site} label="Vue 3D sur le site" /> <Text dimColor>{site.replace(/^https?:\/\//, '')}</Text></Text>
+    )
+
     if (e.surface === 'terminal') {
-      return <Box flexDirection="column">{header}{roster}{filesBlock}{feedBlock}</Box>
+      return <Box flexDirection="column">{header}{siteLink}{roster}{filesBlock}{feedBlock}</Box>
     }
+    // Sans width/height, la surface dessine l'image sur toute la largeur du panneau
+    // en gardant ses proportions ; le cadre interactif, lui, retombait à ~150 px de haut.
     const { Svg } = els
-    const cols = (e.props as any)?.bodyColumns ?? 48
-    const width = Math.max(240, Math.min(720, Math.round(cols * 6.5)))
-    const height = Math.round((width * 208) / 320)
-    const svg = renderScene(s, world.id, now, width, height)
+    const svg = fitScene(s, world.id, now)
+    const bigToggle = (
+      <Button key="big" plain onPress={() => void setPref({ big: !p.big })()}>
+        {p.big ? '⤡ Tout afficher' : '⤢ Chambre seule'}
+      </Button>
+    )
+    const scene = <Svg source={svg} alt={`Chambre ${world.name} : Claude et ${living.length} sous-agent(s)`} />
+    if (p.big) {
+      return (
+        <Box flexDirection="column">
+          {scene}
+          <Box flexDirection="row" gap={1} flexWrap="wrap">{bigToggle}{siteLink}</Box>
+          {roster}
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
-        <Svg source={svg} width={width} height={height} alt={`Chambre ${world.name} : Claude et ${living.length} sous-agent(s)`} isInteractive />
-        {header}
+        {scene}
+        <Box flexDirection="row" gap={1} flexWrap="wrap">{header}{bigToggle}</Box>
+        {siteLink}
         {roster}
         {filesBlock}
         {feedBlock}
       </Box>
     )
   })
+}
+
+/**
+ * Le SVG doit rester sous SVG_LIMIT. Avec beaucoup d'agents au travail,
+ * on retire d'abord les bulles, puis les agents les plus anciens (le panneau texte les liste toujours).
+ */
+const SVG_LIMIT = 131072 - 4096
+function fitScene(s: RoomState, world: string, now: number) {
+  let svg = renderScene(s, world, now, SCENE_PX.w, SCENE_PX.h)
+  if (svg.length <= SVG_LIMIT) return svg
+  const quiet: RoomState = { ...s, main: { ...s.main, bubble: undefined }, agents: s.agents.map(a => ({ ...a, bubble: undefined })) }
+  svg = renderScene(quiet, world, now, SCENE_PX.w, SCENE_PX.h)
+  let keep = quiet.agents.length
+  while (svg.length > SVG_LIMIT && keep > 0) {
+    keep = Math.floor(keep * 0.8)
+    const recent = [...quiet.agents].sort((a, b) => b.spawnedAt - a.spawnedAt).slice(0, keep)
+    svg = renderScene({ ...quiet, agents: recent }, world, now, SCENE_PX.w, SCENE_PX.h)
+  }
+  return svg
 }
 
 function scheduleRetire($: any, key: string, delay: number) {
