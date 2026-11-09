@@ -1,0 +1,31 @@
+name: Release
+
+# Pousser un tag vX.Y.Z crée la release GitHub, avec la section du CHANGELOG comme notes.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Le tag correspond à package.json
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$v" != "$pkg" ]; then echo "Tag $GITHUB_REF_NAME mais package.json dit $pkg"; exit 1; fi
+      - name: Notes de version depuis le CHANGELOG
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" 'index($0, "## " v) == 1 { f = 1; next } /^## / && f { exit } f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Aucune section « ## $v » dans CHANGELOG.md"; exit 1; fi
+          printf '\n---\n**Install / Installer :** `npx github:%s#%s setup`\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> notes.md
+      - name: Créer la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -137,7 +137,7 @@ code, kbd { font-family: var(--mono); }
 .btn-group .btn:hover, .btn-group .btn:focus-visible { position: relative; z-index: 1; }
 .btn--icon { padding: 8px 11px; min-width: 38px; }
 
-.pickers { display: flex; gap: 8px; }
+.pickers { display: flex; gap: 8px; flex-wrap: wrap; }
 .picker {
   display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px 4px;
@@ -186,6 +186,7 @@ code, kbd { font-family: var(--mono); }
 .onboarding-close { position: absolute; top: 12px; right: 12px; }
 .onb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .onb-card {
+  min-width: 0; /* la commande longue défile dans sa boîte au lieu d'élargir la carte */
   position: relative; display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 12px 12px 42px;
 }
@@ -390,7 +391,8 @@ kbd {
   .counters { width: 100%; }
   .counters div { flex: 1; }
   .actions, .pickers { width: 100%; }
-  .picker { flex: 1; }
+  .picker { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .picker select { width: 100%; }
   .actions > .btn { flex: 1; }
   .inspector { left: 8px; right: 8px; width: auto; top: 8px; }
   .onboarding { position: static; transform: none; width: 100%; margin-top: 8px; animation: none; }

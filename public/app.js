@@ -9,6 +9,11 @@
 (() => {
   'use strict';
 
+  // Traductions (public/i18n.js) ; sans le fichier, la page reste en français.
+  const T = window.I18N || { lang: 'fr', t: k => k, list: () => [], msg: e => (e && e.message) || '', prompt: e => (e && e.prompt) || '', todos: e => e && e.todos, apply() {}, set() {} };
+  const tr = (k, v) => T.t(k, v);
+  const roleLabel = r => (r === 'Orchestrateur' ? tr('role.main') : r); // les autres rôles (Coder, Tester…) sont les mêmes dans les deux langues
+
   /* ================================================================
    * Constantes du monde
    * ================================================================ */
@@ -41,27 +46,13 @@
     Task: 'whiteboard', Agent: 'whiteboard', TodoWrite: 'whiteboard', TaskCreate: 'whiteboard', TaskUpdate: 'whiteboard',
     ExitPlanMode: 'whiteboard', Plan: 'whiteboard', Think: 'whiteboard'
   };
-  const STATUS_LABEL = {
-    spawning: 'Arrive…', walking: 'En marche', coding: 'Écrit du code', reading: 'Lit un fichier',
-    planning: 'Planifie au tableau', bash: 'Lance des commandes', coffee: 'En pause', idle: 'En pause',
-    handoff: 'Remet son rapport', done: 'Terminé', orchestrating: 'Orchestre', error: 'Erreur'
-  };
-  const SMALL_TALK = [
-    'Ce café est parfait.', 'Tu as vu le diff ? Propre.', 'Je recharge les batteries.',
-    'Les tests sont verts, je savoure.', 'Pause bien méritée !', "Quelqu'un a nommé une variable data2…",
-    'Le chef va nous rappeler, je le sens.', "J'ai lu 40 fichiers aujourd'hui.", 'Le chat a encore piqué le coussin.'
-  ];
-  const REPLIES = ['Carrément.', 'Haha, classique.', 'Pareil !', 'Bien joué.', 'Chut, le chat dort.', 'On en reparle au prochain sprint.'];
+  const STATUS_LABEL = Object.fromEntries(['spawning', 'walking', 'coding', 'reading', 'planning', 'bash', 'coffee', 'idle', 'handoff', 'done', 'orchestrating', 'error'].map(k => [k, tr(`st.${k}`)]));
+  const SMALL_TALK = T.list('smallTalk');
+  const REPLIES = T.list('replies');
   const CODE_GLYPHS = ['{ }', '=>', '</>', ';', '( )', 'fn', '++', '[ ]', '&&', '#', '==='];
   const RETIRE_DELAY = 4500;        // ms au canapé avant d'être retiré (mode pompe)
-  const EXEC_LINES = [
-    'Merci pour tes services, {name}.', '{name}, ton contexte est clos.', 'Fin de mission, {name}. Adieu.',
-    "On n'a plus besoin de toi, {name} !", '{name}, tu as bien travaillé. Désolé.'
-  ];
-  const GHOST_LINES = [
-    'Adieu monde cruel…', "J'avais encore des tokens…", 'Au moins mes tests passent.',
-    'Je reviendrai… en sous-agent.', 'Pensez à commit mon travail !'
-  ];
+  const EXEC_LINES = T.list('execLines');
+  const GHOST_LINES = T.list('ghostLines');
 
   /* ================================================================
    * Utilitaires
@@ -93,7 +84,7 @@
   }
   function fmtTime(ts) {
     const d = new Date(ts);
-    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return d.toLocaleTimeString(T.lang === 'fr' ? 'fr-FR' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
   function shortText(s, n) {
     s = String(s || '').replace(/\s+/g, ' ').trim();
@@ -576,6 +567,7 @@
     counters.events++;
     if (e.source === 'claude-code' && !claudeSeen) { claudeSeen = true; updateSource(); }
     const main = getMain();
+    const em = T.msg(e); // message traduit (clé du serveur, version anglaise de la démo, sinon texte d'origine)
 
     switch (e.type) {
       case 'RESET': return resetRoom(true);
@@ -584,23 +576,23 @@
         let a = agents.get(e.agentId);
         if (a && (a.gone || a.dying)) { forgetAgent(a); a = null; }
         const isNew = !a;
-        if (!a) a = makeAgent(e.agentId, { name: e.name, role: normRole(e.role), parentId: e.parentId, prompt: e.prompt || e.message, task: e.message, timestamp: e.timestamp });
-        else { a.name = e.name || a.name; a.role = normRole(e.role || a.role); a.prompt = e.prompt || e.message || a.prompt; a.done = false; }
-        const task = shortText(e.message || e.prompt || 'une nouvelle tâche', 90);
-        say(main, `Je crée ${a.name} pour : ${task}`);
+        if (!a) a = makeAgent(e.agentId, { name: e.name, role: normRole(e.role), parentId: e.parentId, prompt: T.prompt(e) || em, task: em, timestamp: e.timestamp });
+        else { a.name = e.name || a.name; a.role = normRole(e.role || a.role); a.prompt = T.prompt(e) || em || a.prompt; a.done = false; }
+        const task = shortText(em || T.prompt(e) || tr('task.default'), 90);
+        say(main, tr('say.spawn', { name: a.name, task }));
         main.lastToolAt = now();
         if (isNew) spawnBeam(a.x, a.y, a.color);
         a.locked = true;
         setQueue(a, [
           { k: 'wait', ms: 1300 },
-          { k: 'do', fn: x => { x.face = 'up'; say(x, 'Bien reçu chef, je m\'en occupe !'); } },
+          { k: 'do', fn: x => { x.face = 'up'; say(x, tr('say.ack')); } },
           { k: 'wait', ms: 1500 },
           { k: 'do', fn: x => { x.locked = false; } },
           goStation(a, ROLE_STATION[a.role] || 'code')
         ]);
-        record(a, e, `Créé pour : ${task}`);
-        record(main, e, `Crée ${a.name} (${a.role})`);
-        log(main, 'SPAWN', `crée ${a.name} · ${a.role} → ${task}`, e);
+        record(a, e, tr('rec.created', { task }));
+        record(main, e, tr('rec.creates', { name: a.name, role: a.role }));
+        log(main, 'SPAWN', tr('log.spawn', { name: a.name, role: a.role, task }), e);
         break;
       }
 
@@ -610,13 +602,13 @@
         a.retireAt = 0;
         a.tool = e.tool || null;
         a.lastToolAt = now();
-        const text = e.message || `Outil ${e.tool || ''}`;
+        const text = em || tr('tool.generic', { tool: e.tool || '' });
         record(a, e, text);
         log(a, 'TOOL', text, e);
-        if (Array.isArray(e.todos)) { tasks = e.todos.slice(0, 50); tasksDirty = true; }
+        { const td = T.todos(e); if (Array.isArray(td)) { tasks = td.slice(0, 50).map(x => ({ ...x })); tasksDirty = true; } }
         if (e.task) applyTask(e.task);
         if (a.id === MAIN_ID) {
-          say(a, `[${e.tool || 'outil'}] ${text}`, { minor: true });
+          say(a, `[${e.tool || tr('tool.word')}] ${text}`, { minor: true });
           break;
         }
         if (a.done) { a.done = false; treeDirty = true; }
@@ -628,7 +620,7 @@
         }
         const steps = [goStation(a, station)];
         if (a.locked) pushQueue(a, steps); else setQueue(a, steps);
-        say(a, `[${e.tool || 'outil'}] ${text}`, { minor: true });
+        say(a, `[${e.tool || tr('tool.word')}] ${text}`, { minor: true });
         break;
       }
 
@@ -639,12 +631,12 @@
           benchLamps[a.slot].state = ok ? 'ok' : 'fail';
           benchLamps[a.slot].until = now() + 9000;
         }
-        if (!ok || e.message) {
-          record(a, e, (ok ? '✓ ' : '✗ ') + (e.message || e.tool || ''));
-          log(a, ok ? 'OK' : 'ERR', e.message || `${e.tool} terminé`, e);
+        if (!ok || em) {
+          record(a, e, (ok ? '✓ ' : '✗ ') + (em || e.tool || ''));
+          log(a, ok ? 'OK' : 'ERR', em || tr('tool.finished', { tool: e.tool }), e);
         }
         if (!ok && !replaying) a.errorUntil = now() + 3500;
-        else if (e.message && e.tool === 'Bash') say(a, e.message, { minor: true });
+        else if (em && e.tool === 'Bash') say(a, em, { minor: true });
         break;
       }
 
@@ -655,28 +647,28 @@
           a.face = Math.abs(target.x - a.x) > Math.abs(target.y - a.y) ? (target.x > a.x ? 'right' : 'left') : (target.y > a.y ? 'down' : 'up');
         }
         const prefix = target && target !== a ? `@${target.name} ` : '';
-        say(a, prefix + (e.message || ''), { to: target ? target.id : null });
-        record(a, e, prefix + (e.message || ''));
-        log(a, 'MSG', e.message || '', e, target);
+        say(a, prefix + (em || ''), { to: target ? target.id : null });
+        record(a, e, prefix + (em || ''));
+        log(a, 'MSG', em || '', e, target);
         break;
       }
 
       case 'SUBAGENT_COMPLETE': {
         const a = agents.get(e.agentId);
-        if (!a || a.id === MAIN_ID) { log(main, 'DONE', e.message || 'Terminé', e); break; }
+        if (!a || a.id === MAIN_ID) { log(main, 'DONE', em || tr('log.done'), e); break; }
         if (a.done) break;
         a.done = true;
         a.tool = null;
-        const report = shortText(e.message || 'Mission accomplie.', 150);
-        record(a, e, `Rapport : ${report}`);
-        record(main, e, `Rapport de ${a.name}`);
+        const report = shortText(em || tr('missionDone'), 150);
+        record(a, e, tr('rec.report', { report }));
+        record(main, e, tr('rec.reportOf', { name: a.name }));
         log(a, 'DONE', report, e);
         a.locked = true;
         setQueue(a, [
           goStation(a, 'handoff'),
-          { k: 'do', fn: x => { x.face = 'up'; x.carrying = false; throwFolder(x); say(x, `Rapport : ${report}`); } },
+          { k: 'do', fn: x => { x.face = 'up'; x.carrying = false; throwFolder(x); say(x, tr('say.report', { report })); } },
           { k: 'wait', ms: 2200 },
-          { k: 'do', fn: x => { say(getMain(), `Merci ${x.name}, beau travail !`); x.activity = 'done'; } },
+          { k: 'do', fn: x => { say(getMain(), tr('say.thanks', { name: x.name })); x.activity = 'done'; } },
           { k: 'wait', ms: 1200 },
           { k: 'do', fn: x => {
             x.locked = false;
@@ -691,7 +683,7 @@
       }
 
       case 'NOTIFY': {
-        const text = e.message || (e.kind === 'waiting' ? "J'attends ta réponse." : "J'ai terminé.");
+        const text = em || (e.kind === 'waiting' ? tr('say.waiting') : tr('say.done'));
         say(main, text);
         record(main, e, text);
         log(main, e.kind === 'waiting' ? 'SYS' : 'DONE', text, e);
@@ -703,15 +695,15 @@
         const a = ensureAgent(e);
         if (!replaying) a.errorUntil = now() + 4000;
         if (a.station === 'bench' && a.slot >= 0) { benchLamps[a.slot].state = 'fail'; benchLamps[a.slot].until = now() + 9000; }
-        say(a, e.message || 'Erreur !', { style: 'error' });
-        record(a, e, `Erreur : ${e.message || ''}`);
-        log(a, 'ERR', e.message || 'Erreur', e);
+        say(a, em || tr('say.error'), { style: 'error' });
+        record(a, e, tr('rec.error', { message: em || '' }));
+        log(a, 'ERR', em || tr('log.error'), e);
         burst(a.x, a.y - 14, '#ff5555', 8);
         break;
       }
 
       default:
-        log(main, 'SYS', `Événement inconnu : ${e.type}`, e);
+        log(main, 'SYS', tr('log.unknown', { type: e.type }), e);
     }
     treeDirty = true;
     updateCounters();
@@ -749,7 +741,7 @@
     const main = getMain();
     main.bubbles = []; main.history = []; main.files.clear();
     if (selectedId && selectedId !== MAIN_ID) closeInspector();
-    if (announce && !replaying) addLogEntry({ t: Date.now(), who: 'Système', color: '#ffb86b', kind: 'SYS', text: 'Chambre réinitialisée.' });
+    if (announce && !replaying) addLogEntry({ t: Date.now(), who: tr('log.system'), color: '#ffb86b', kind: 'SYS', text: tr('log.reset') });
     treeDirty = true;
     updateCounters();
   }
@@ -874,7 +866,7 @@
       burst(a.x, a.y - 8, '#ffffff', 10);
       const tip = gunTip(a, 0);
       for (let i = 0; i < 8; i++) particles.push({ x: tip.x, y: tip.y, vx: rnd(-6, 6), vy: rnd(-18, -6), life: 0, max: rnd(0.8, 1.4), color: 'rgba(200,200,210,0.8)', size: 2, grav: 0 });
-      record(a, { timestamp: Date.now(), type: 'RETIRE' }, 'Retiré du service à la pompe');
+      record(a, { timestamp: Date.now(), type: 'RETIRE' }, tr('rec.retired'));
     }
     if (exec.fired && !exec.landed && el > EXEC.fire + 380) {
       exec.landed = true;
@@ -886,7 +878,7 @@
       say(a, pick(GHOST_LINES));
     }
     if (el > EXEC.end) {
-      log(a, 'ERR', '💥 retiré du service à la pompe', { timestamp: Date.now() });
+      log(a, 'ERR', tr('log.retired'), { timestamp: Date.now() });
       if (selectedId === a.id) closeInspector();
       forgetAgent(a);
       main.face = 'down';
@@ -1510,7 +1502,7 @@
   };
   const WORLDS = {};
   for (const [id, w] of Object.entries(window.ROOM_WORLDS || {})) {
-    if (w && w.pal) WORLDS[id] = { glyphs: CODE_GLYPHS, status: {}, ...w, pal: { ...FALLBACK_WORLD.pal, ...w.pal } };
+    if (w && w.pal) WORLDS[id] = { glyphs: CODE_GLYPHS, status: {}, ...w, ...((T.lang !== 'fr' && w[T.lang]) || {}), pal: { ...FALLBACK_WORLD.pal, ...w.pal } };
     else console.error(`Monde "${id}" ignoré : palette (pal) manquante.`);
   }
   if (!WORLDS.studio) WORLDS.studio = FALLBACK_WORLD;
@@ -1720,7 +1712,7 @@
     // avancement du plan, au-dessus du tableau
     if (tasks.length) {
       const done = tasks.filter(x => x.status === 'completed').length;
-      const label = `Plan ${done}/${tasks.length}`;
+      const label = tr('plan.label', { done, total: tasks.length });
       const pos = P(54, FLOOR_Y, 44);
       ctx.font = `600 ${Math.max(9, Math.round(U * 2.4))}px ${FONT}`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1801,11 +1793,11 @@
    * HUD : arbre, journal, compteurs, fiche
    * ================================================================ */
   function statusOf(a) {
-    if (a.gone) return 'Parti';
-    if (a.dying) return a.hitAt ? '💥 Retiré' : 'Va être retiré…';
+    if (a.gone) return tr('st.gone');
+    if (a.dying) return a.hitAt ? tr('st.retired') : tr('st.retiring');
     if (a.errorUntil > now()) return STATUS_LABEL.error;
     if (a.path.length) return STATUS_LABEL.walking;
-    if (a.done && a.activity !== 'handoff') return a.activity === 'coffee' ? 'Terminé · café' : STATUS_LABEL.done;
+    if (a.done && a.activity !== 'handoff') return a.activity === 'coffee' ? tr('st.doneCoffee') : STATUS_LABEL.done;
     return (world.status && world.status[a.activity]) || STATUS_LABEL[a.activity] || a.activity;
   }
 
@@ -1821,11 +1813,11 @@
       div.className = 'node' + (selectedId === a.id ? ' selected' : '') + (a.done ? ' done' : '');
       const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = a.color; sw.style.color = a.color;
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = a.name;
-      const role = document.createElement('span'); role.className = 'role-chip'; role.textContent = a.role; role.style.color = ROLE_COLORS[a.role] || a.color; role.style.marginLeft = '6px';
+      const role = document.createElement('span'); role.className = 'role-chip'; role.textContent = roleLabel(a.role); role.style.color = ROLE_COLORS[a.role] || a.color; role.style.marginLeft = '6px';
       nm.appendChild(role);
       const st = document.createElement('span');
       const s = statusOf(a);
-      st.className = 'st' + (s === 'Erreur' ? ' err' : (/Écrit|Lit|Lance|Planifie|marche|Orchestre/.test(s) ? ' busy' : ''));
+      st.className = 'st' + (a.errorUntil > now() ? ' err' : (!a.done && (a.path.length || ['coding', 'reading', 'bash', 'planning', 'orchestrating'].includes(a.activity)) ? ' busy' : ''));
       const u = agentUsage(a.id);
       st.textContent = s + (a.tool && !a.done && a.id !== MAIN_ID ? ` · ${a.tool}` : '') + (u && u.messages ? ` · ${fmtCost(u.cost)}` : '');
       div.append(sw, nm, st);
@@ -1846,7 +1838,7 @@
       });
     };
     build(MAIN_ID, ul);
-    if (!subs.length) { const e = document.createElement('li'); e.className = 'empty'; e.textContent = 'Aucun sous-agent pour le moment.'; ul.appendChild(e); }
+    if (!subs.length) { const e = document.createElement('li'); e.className = 'empty'; e.textContent = tr('tree.empty'); ul.appendChild(e); }
     root.appendChild(ul);
     tree.replaceChildren(root);
     const calm = !subs.length && !main.bubbles.length && !connection.demoRunning;
@@ -1855,26 +1847,26 @@
     if (tasksDirty) { tasksDirty = false; renderTasks(); }
   }
 
-  const FILE_ICON = { w: ['✚', 'écrit'], e: ['✎', 'modifié'], r: ['◌', 'lu'] };
+  const FILE_ICON = { w: ['✚', tr('file.w')], e: ['✎', tr('file.e')], r: ['◌', tr('file.r')] };
   function renderFiles() {
     const list = $('#file-list');
     const items = [...fileIndex.values()].sort((a, b) => (a.kind === 'r') - (b.kind === 'r') || b.t - a.t).slice(0, 200);
     $('#files-count').textContent = fileIndex.size;
     if (!items.length) {
       const li = document.createElement('li'); li.className = 'none';
-      li.textContent = 'Aucun fichier touché pour le moment.';
+      li.textContent = tr('files.empty');
       return list.replaceChildren(li);
     }
     list.replaceChildren(...items.map(f => {
       const a = agents.get(f.agentId);
       const li = document.createElement('li');
-      li.title = `${f.path} · ${FILE_ICON[f.kind][1]} ${f.count} fois`;
+      li.title = tr('files.tip', { path: f.path, action: FILE_ICON[f.kind][1], count: f.count });
       const act = document.createElement('span'); act.className = `act ${f.kind}`; act.textContent = FILE_ICON[f.kind][0];
       const path = document.createElement('span'); path.className = 'path';
       const bdi = document.createElement('bdi'); bdi.textContent = f.path; path.appendChild(bdi);
       const by = document.createElement('span'); by.className = 'by';
       const sw = document.createElement('i'); sw.style.background = a ? a.color : 'var(--muted)';
-      by.append(sw, a ? a.name : 'parti');
+      by.append(sw, a ? a.name : tr('files.left'));
       if (f.added || f.removed) { const st = document.createElement('span'); st.className = 'stat'; const ad = document.createElement('span'); ad.className = 'a'; ad.textContent = ` +${f.added}`; const de = document.createElement('span'); de.className = 'd'; de.textContent = ` −${f.removed}`; st.append(ad, de); by.appendChild(st); }
       li.append(act, path, by);
       li.addEventListener('click', () => openDiff(f));
@@ -1991,15 +1983,15 @@
     } catch { /* audio indisponible */ }
   }
   function notifyUser(kind, text) {
-    toast(kind === 'waiting' ? `⏳ Claude attend ta réponse : ${text}` : '✅ Claude a terminé.', kind === 'waiting' ? 'err' : 'ok');
+    toast(kind === 'waiting' ? tr('notify.waiting.toast', { text }) : tr('notify.done.toast'), kind === 'waiting' ? 'err' : 'ok');
     if (!notify.on) return;
     chime(kind);
     if (document.hidden) {
       notify.unread++;
-      document.title = `(${notify.unread}) ${kind === 'waiting' ? 'Claude attend' : 'Claude a fini'} · ${notify.baseTitle}`;
+      document.title = `(${notify.unread}) ${kind === 'waiting' ? tr('notify.waiting.title') : tr('notify.done.title')} · ${notify.baseTitle}`;
       try {
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(kind === 'waiting' ? 'Claude attend ta réponse' : 'Claude a terminé', { body: shortText(text, 120), tag: 'agent-room', silent: true });
+          new Notification(kind === 'waiting' ? tr('notify.waiting.os') : tr('notify.done.os'), { body: shortText(text, 120), tag: 'agent-room', silent: true });
         }
       } catch { /* notifications bloquées */ }
     }
@@ -2010,7 +2002,7 @@
     try { localStorage.setItem('agent-room:notify', notify.on ? 'on' : 'off'); } catch { /* stockage indisponible */ }
     paintBell();
     if (notify.on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
-    toast(notify.on ? '🔔 Tu seras prévenu quand Claude finit ou attend ta réponse.' : '🔕 Notifications coupées.');
+    toast(notify.on ? tr('notify.on') : tr('notify.off'));
   }
   $('#btn-notify').addEventListener('click', toggleNotify);
   paintBell();
@@ -2031,8 +2023,8 @@
     $('#tasks-count').textContent = tasks.length ? `${done}/${tasks.length}` : '0';
     $('#tasks-bar').style.width = tasks.length ? `${Math.round(done / tasks.length * 100)}%` : '0%';
     const current = tasks.find(t => t.status === 'in_progress');
-    $('#tasks-summary').textContent = !tasks.length ? 'Le plan de Claude s\'affichera ici dès qu\'il fera une liste de tâches.'
-      : done === tasks.length ? `Tout est fait (${done} tâches).` : `${done} sur ${tasks.length} faites${current ? ` · en cours : ${shortText(current.content, 60)}` : ''}`;
+    $('#tasks-summary').textContent = !tasks.length ? tr('tasks.empty')
+      : done === tasks.length ? tr('tasks.done', { n: done }) : tr('tasks.progress', { done, total: tasks.length }) + (current ? tr('tasks.current', { task: shortText(current.content, 60) }) : '');
     $('#task-list').replaceChildren(...tasks.map(t => {
       const li = document.createElement('li'); li.className = t.status;
       const box = document.createElement('span'); box.className = 'box'; box.textContent = t.status === 'completed' ? '✓' : '';
@@ -2046,11 +2038,11 @@
   function openDiff(f) {
     const a = agents.get(f.diffBy || f.agentId);
     $('#diff-title').textContent = f.path;
-    $('#diff-meta').textContent = `${FILE_ICON[f.kind][1]} par ${a ? a.name : 'un agent parti'} · +${f.added || 0} −${f.removed || 0} · ${f.count} action(s)`;
+    $('#diff-meta').textContent = tr('diff.meta', { action: FILE_ICON[f.kind][1], name: a ? a.name : tr('diff.someone'), added: f.added || 0, removed: f.removed || 0, count: f.count });
     const body = $('#diff-body');
     if (!f.diff) {
       const span = document.createElement('span'); span.className = 'sep';
-      span.textContent = f.kind === 'r' ? 'Fichier seulement lu : aucun changement.' : 'Aucun aperçu disponible pour ce changement.';
+      span.textContent = f.kind === 'r' ? tr('diff.readOnly') : tr('diff.none');
       body.replaceChildren(span);
     } else {
       body.replaceChildren(...f.diff.split('\n').slice(0, 800).map(l => {
@@ -2073,7 +2065,7 @@
     usageState = u;
     if (!u || !u.total || !u.total.messages) return;
     $('#c-cost').textContent = fmtCost(u.total.cost);
-    $('#cost-box').title = `${fmtTokens(tokensOf(u.total))} tokens (entrée ${fmtTokens(u.total.input)}, sortie ${fmtTokens(u.total.output)}, cache lu ${fmtTokens(u.total.cacheRead)}, cache écrit ${fmtTokens(u.total.cacheWrite)}) · estimation au tarif public de l'API`;
+    $('#cost-box').title = tr('cost.tip', { tokens: fmtTokens(tokensOf(u.total)), input: fmtTokens(u.total.input), output: fmtTokens(u.total.output), read: fmtTokens(u.total.cacheRead), write: fmtTokens(u.total.cacheWrite) });
     treeDirty = true;
     if (selectedId) inspectorDirty = true;
   }
@@ -2103,8 +2095,8 @@
     try {
       const r = await api('/api/history');
       const data = await r.json();
-      if (!data.enabled) throw new Error('journal sur disque désactivé (AGENT_ROOM_HISTORY=0)');
-      if (!data.days.length) throw new Error('aucun événement enregistré pour le moment');
+      if (!data.enabled) throw new Error(tr('export.disabled'));
+      if (!data.days.length) throw new Error(tr('export.empty'));
       for (const d of data.days.slice().reverse()) {
         const li = document.createElement('li');
         const label = document.createElement('span');
@@ -2118,7 +2110,7 @@
         list.appendChild(li);
       }
     } catch (err) {
-      const li = document.createElement('li'); li.textContent = connection.live ? `Export indisponible : ${err.message}.` : 'Export indisponible en mode démo (serveur non joint).';
+      const li = document.createElement('li'); li.textContent = connection.live ? tr('export.unavailable', { why: err.message }) : tr('export.demo');
       list.appendChild(li);
     }
     $('#export').showModal();
@@ -2132,7 +2124,7 @@
       a.href = url; a.download = `agent-room-${day}.${fmt}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch (err) { toast(`Export impossible : ${err.message}`, 'err'); }
+    } catch (err) { toast(tr('export.fail', { why: err.message }), 'err'); }
   }
   $('#btn-export').addEventListener('click', openExport);
   $('#export-close').addEventListener('click', () => $('#export').close());
@@ -2153,16 +2145,16 @@
     if (!a) return closeInspector();
     $('#i-swatch').style.background = a.color; $('#i-swatch').style.color = a.color;
     $('#i-name').textContent = a.name;
-    const role = $('#i-role'); role.textContent = a.role; role.style.color = ROLE_COLORS[a.role] || a.color;
+    const role = $('#i-role'); role.textContent = roleLabel(a.role); role.style.color = ROLE_COLORS[a.role] || a.color;
     const u = agentUsage(a.id);
-    $('#i-status').textContent = `${statusOf(a)} · depuis ${fmtTime(a.spawnedAt)}${u && u.messages ? ` · ${fmtTokens(tokensOf(u))} tokens · ~${fmtCost(u.cost)}` : ''}`;
+    $('#i-status').textContent = tr('inspector.since', { status: statusOf(a), time: fmtTime(a.spawnedAt) }) + (u && u.messages ? tr('inspector.cost', { tokens: fmtTokens(tokensOf(u)), cost: fmtCost(u.cost) }) : '');
     $('#i-prompt').textContent = a.id === MAIN_ID
-      ? `Orchestrateur principal. ${[...agents.values()].filter(x => x.id !== MAIN_ID).length} sous-agent(s) dans la chambre.`
-      : (a.prompt || a.task || '(aucun prompt transmis)');
+      ? tr('inspector.main', { n: [...agents.values()].filter(x => x.id !== MAIN_ID).length })
+      : (a.prompt || a.task || tr('inspector.noPrompt'));
     const files = $('#i-files');
     files.replaceChildren();
     $('#i-files-count').textContent = a.files.size ? `(${a.files.size})` : '';
-    if (!a.files.size) { const li = document.createElement('li'); li.className = 'none'; li.textContent = 'aucun pour le moment'; files.appendChild(li); }
+    if (!a.files.size) { const li = document.createElement('li'); li.className = 'none'; li.textContent = tr('inspector.none'); files.appendChild(li); }
     [...a.files].slice(-40).forEach(f => { const li = document.createElement('li'); li.textContent = f; files.appendChild(li); });
     const hist = $('#i-history');
     hist.replaceChildren();
@@ -2231,14 +2223,14 @@
   function setStatus(kind) {
     statusEl.className = `status status--${kind}`;
     statusEl.querySelector('.label').textContent =
-      kind === 'live' ? 'En direct' : kind === 'demo' ? 'Mode démo' : kind === 'auth' ? 'Jeton requis' : 'Connexion…';
+      tr(`status.${kind === 'live' || kind === 'demo' || kind === 'auth' ? kind : 'connecting'}`);
     statusEl.title = kind === 'auth'
-      ? 'Le serveur exige un jeton : ouvre l\'URL affichée dans le terminal (…/?token=…)'
-      : kind === 'demo' ? 'Serveur injoignable : la chambre rejoue la démo localement' : 'Connecté au serveur';
+      ? tr('status.tip.auth')
+      : kind === 'demo' ? tr('status.tip.demo') : tr('status.tip.live');
     updateSource();
   }
   function updateSource() {
-    $('#status-source').textContent = !connection.live ? '' : claudeSeen ? 'Claude Code branché' : 'en attente de Claude';
+    $('#status-source').textContent = !connection.live ? '' : claudeSeen ? tr('status.claude') : tr('status.waiting');
   }
 
   function connect() {
@@ -2253,7 +2245,7 @@
       connection.live = true; connection.retry = 0;
       stopLocalDemo();
       setStatus('live');
-      if (wasRetry) toast('Reconnecté au serveur.', 'ok');
+      if (wasRetry) toast(tr('toast.reconnected'), 'ok');
     };
     ws.onmessage = msg => {
       let data;
@@ -2273,8 +2265,8 @@
       let needsAuth = false;
       try { const h = await (await fetch('/api/health')).json(); needsAuth = h.auth && !wasLive; } catch { /* serveur arrêté */ }
       setStatus(needsAuth ? 'auth' : 'demo');
-      if (wasLive) toast('Connexion perdue, nouvel essai…', 'err');
-      if (needsAuth && connection.retry === 0) toast('Ce serveur exige un jeton : ouvre l\'URL avec ?token=… affichée dans le terminal.', 'err');
+      if (wasLive) toast(tr('toast.lost'), 'err');
+      if (needsAuth && connection.retry === 0) toast(tr('toast.needToken'), 'err');
       const delay = Math.min(needsAuth ? 15000 : 5000, 800 * 2 ** connection.retry++);
       setTimeout(connect, delay);
     };
@@ -2290,7 +2282,7 @@
     replaying = false;
     counters.events = history.length;
     updateCounters();
-    if (history.length) addLogEntry({ t: Date.now(), who: 'Système', color: '#ffb86b', kind: 'SYS', text: `${history.length} événement(s) récents rejoués.` });
+    if (history.length) addLogEntry({ t: Date.now(), who: tr('log.system'), color: '#ffb86b', kind: 'SYS', text: tr('log.replayed', { n: history.length }) });
   }
 
   function emitLocal(ev) { handleEvent({ timestamp: Date.now(), ...ev }); }
@@ -2337,19 +2329,20 @@
     { role: 'Reviewer', name: 'Lynx', task: 'relire la PR #42', tools: [['Grep', 'TODO|FIXME'], ['Read', 'src/api/routes.ts']] },
     { role: 'Debugger', name: 'Patch', task: 'traquer la fuite mémoire du worker', tools: [['Bash', 'node --inspect worker.js'], ['Edit', 'src/worker.ts']] }
   ];
+  TEST_AGENTS.forEach((x, i) => { x.task = T.list('test.tasks')[i] || x.task; });
   function spawnTestAgent() {
     const base = TEST_AGENTS[testCount % TEST_AGENTS.length];
     const id = `test-${Date.now().toString(36)}`;
     const name = `${base.name}${testCount >= TEST_AGENTS.length ? '-' + (Math.floor(testCount / TEST_AGENTS.length) + 1) : ''}`;
     testCount++;
-    send({ type: 'SUBAGENT_SPAWN', agentId: id, parentId: MAIN_ID, role: base.role, name, message: base.task, prompt: `Mission de test : ${base.task}.` });
+    send({ type: 'SUBAGENT_SPAWN', agentId: id, parentId: MAIN_ID, role: base.role, name, message: base.task, prompt: tr('test.prompt', { task: base.task }) });
     let at = 4200;
     base.tools.forEach(([tool, file]) => {
       setTimeout(() => send({ type: 'TOOL_START', agentId: id, tool, file: /\.\w+$/.test(file) ? file : undefined, message: file ? `${tool} ${file}` : `${tool}…` }), at);
       at += 4200;
-      if (tool === 'Bash') setTimeout(() => send({ type: 'TOOL_END', agentId: id, tool, success: Math.random() > 0.3, message: 'commande terminée' }), at - 1200);
+      if (tool === 'Bash') setTimeout(() => send({ type: 'TOOL_END', agentId: id, tool, success: Math.random() > 0.3, message: tr('test.cmdDone') }), at - 1200);
     });
-    setTimeout(() => send({ type: 'SUBAGENT_COMPLETE', agentId: id, message: `Fini : ${base.task}.` }), at + 1500);
+    setTimeout(() => send({ type: 'SUBAGENT_COMPLETE', agentId: id, message: tr('test.done', { task: base.task }) }), at + 1500);
   }
   $('#btn-spawn').addEventListener('click', spawnTestAgent);
 
@@ -2366,7 +2359,7 @@
   function toggleFullscreen() {
     const stage = $('#stage');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else if (stage.requestFullscreen) stage.requestFullscreen().catch(() => toast('Plein écran indisponible ici.', 'err'));
+    else if (stage.requestFullscreen) stage.requestFullscreen().catch(() => toast(tr('toast.fullscreen'), 'err'));
   }
   document.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
   $('#btn-fullscreen').addEventListener('click', toggleFullscreen);
@@ -2381,9 +2374,9 @@
     const text = $(btn.dataset.copy).textContent;
     try {
       await navigator.clipboard.writeText(text);
-      btn.textContent = 'Copié ✓'; btn.classList.add('done');
-      setTimeout(() => { btn.textContent = 'Copier'; btn.classList.remove('done'); }, 1600);
-    } catch { toast('Copie impossible : sélectionne la commande à la main.', 'err'); }
+      btn.textContent = tr('copied'); btn.classList.add('done');
+      setTimeout(() => { btn.textContent = tr('copy'); btn.classList.remove('done'); }, 1600);
+    } catch { toast(tr('copy.fail'), 'err'); }
   }));
 
   window.addEventListener('keydown', e => {
@@ -2401,7 +2394,7 @@
       const ws = $('#world-select');
       ws.selectedIndex = (ws.selectedIndex + 1) % ws.options.length;
       ws.dispatchEvent(new Event('change'));
-      toast(`Monde : ${ws.options[ws.selectedIndex].textContent}`);
+      toast(tr('toast.world', { name: ws.options[ws.selectedIndex].textContent }));
     } else return;
     e.preventDefault();
   });
@@ -2452,6 +2445,10 @@
    * Démarrage
    * ================================================================ */
   function start() {
+    T.apply(document);
+    const ls = $('#lang-select');
+    ls.value = T.lang;
+    ls.addEventListener('change', () => { T.set(ls.value); const u = new URL(location.href); u.searchParams.delete('lang'); location.href = u.toString(); });
     resize();
     initPickers();
     getMain();

@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.5.0 — français et anglais partout
+
+### Terminal et CLI en anglais
+- Le **mode terminal**, la **CLI** (aide, setup, doctor, hooks, demo, watch), le **conseiller tokens** et les messages de démarrage du serveur existent en français et en anglais.
+- Langue choisie par `--lang en|fr`, sinon `AGENT_ROOM_LANG`, sinon la langue du système (`LC_ALL`, `LANG`…). Dictionnaire dans `bin/i18n.js`.
+- Le hook suit la même règle : le contexte du conseiller envoyé à Claude et les messages de `watch` sont dans la langue de l'utilisateur ; le catalogue porte une version anglaise de chaque outil.
+- Le mode terminal réutilise les traductions de la page (`public/i18n.js`) pour le journal et le plan.
+- `doctor` reconnaît un jeton manquant par le code HTTP 401, plus par le texte du message.
+- Tests : mêmes clés et mêmes variables dans les deux langues, détection de la langue, contexte anglais du conseiller, aide et erreurs de la CLI.
+
+### Page web en anglais
+- La page existe en **français et en anglais** : elle suit la langue du navigateur ; menu **Langue** ou `?lang=en` / `?lang=fr` pour changer (choix mémorisé).
+- Tous les textes passent par `public/i18n.js` (≈ 200 clés par langue) : menus, journal, bulles, statuts, notifications, fiche agent, aide, export, répliques des agents.
+- Les messages générés par le serveur portent une clé de traduction (`msg`) : chaque écran les affiche dans sa langue. Le texte français reste dans `message` pour les scripts qui utilisent l'API.
+- Les 4 mondes et la démo sont traduits (champ `en` des étapes) ; un émetteur peut fournir sa propre version anglaise via `en`.
+- Ajouter une langue = copier le bloc `en` de `i18n.js`.
+- README en anglais (`README.md`) et en français (`README.fr.md`), avec bannière pixel art.
+
+### Corrections
+- Mode terminal : le coût affiché porte le symbole `$`.
+- Plus d'avertissement de Node 26 sur `localStorage` quand le mode terminal charge les traductions.
+- Petits écrans : les 4 menus passent sur deux lignes (plus de défilement horizontal) ; la carte d'accueil ne déborde plus.
+- `setup` (installation en une commande) et l'installation du plugin parlent aussi anglais ; les tests de `setup` fixent leur langue pour ne plus dépendre de celle de la machine de CI.
+- La fin de mission par `SubagentHandback` porte une clé de traduction.
+
+### Dépôt
+- CI : tests du plugin (`claude plugin validate` et `claude plugin test`), vérification que le paquet `npx` contient tout ce que la CLI charge, aide testée dans les deux langues, passages annulés quand un nouveau push arrive.
+- Release automatique : pousser un tag `vX.Y.Z` crée la release GitHub avec la section du CHANGELOG (et vérifie que le tag correspond à `package.json`).
+- Modèles d'issue (bug, idée) et de pull request, bilingues ; failles de sécurité redirigées vers un signalement privé.
+- Dependabot pour les dépendances npm et les actions GitHub.
+- `CONTRIBUTING.md` : les deux produits du dépôt, les règles (un test par bug, textes dans les deux langues, le hook ne bloque jamais Claude), comment publier une version.
+- README : `setup` en tête du tableau d'installation ; `CLAUDE.md` à jour (bilingue, 41 tests).
+
+## 1.4.0 — plugin 0.3.0
+
+### Une seule commande
+- `setup` installe tout sans poser de question : hooks (avec sauvegarde de `settings.json`), plugin Agent Room dans Claude (s'il manque), puis le site s'ouvre. L'ancien assistant reste disponible avec `setup --guide`.
+- Sans commande `claude` sur la machine, le site s'installe quand même et `setup` indique la commande à lancer plus tard.
+
+### Plugin (panneau dans Claude)
+- La chambre prend toute la largeur du panneau : elle est dessinée en image, sans taille imposée (avant, le cadre interactif retombait à ~150 px de haut avec des bandes noires).
+- Bouton « ⤢ Chambre seule » (mémorisé) et lien « 🌐 Vue 3D sur le site » (port `AGENT_ROOM_PORT`).
+- Réécrire un fichier existant avec Write compte et montre les lignes retirées ; MultiEdit enchaîne ses modifications ; `replace_all` compte chaque occurrence.
+- Les noms de fichiers longs sont coupés au milieu ; le SVG reste sous 131 072 caractères même avec beaucoup d'agents au travail.
+
+### Site
+- Sous-agents en arrière-plan : la confirmation de lancement n'est plus prise pour leur rapport ; leur vrai rapport (SubagentHandback ou SubagentStop) clôt la mission.
+- La fin d'un appel d'outil revient à celui qui l'a commencé ; en mode `watch`, les appels du transcript principal restent à Claude et un message réécrit n'est plus rejoué.
+- Arrêter `watch` arrête aussi son lecteur de transcript (il restait tourner seul et envoyait des événements en double).
+
+### Qualité
+- 36 tests Node et 12 tests du plugin.
+
+
 ## 1.3.0
 
 ### Économiser des tokens

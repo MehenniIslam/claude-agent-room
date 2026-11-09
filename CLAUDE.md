@@ -8,7 +8,7 @@ Visualiseur pixel art d'un agent Claude orchestrateur et de ses sous-agents. Deu
 ## Commandes
 
 - Plugin : `claude plugin validate plugin/agent-room`, `claude plugin test plugin/agent-room` (tests dans `plugin/agent-room/tests/`), `claude plugin validate .` pour le marketplace
-- Version web : `npm install`, `npm test` (node --test, 28 tests), `npm start` → http://localhost:3030, `npm run demo`
+- Version web : `npm install`, `npm test` (node --test, 41 tests ; les 4 tests de `setup.test.js` sont ignorés sous Windows), `npm start` → http://localhost:3030, `npm run demo`
 - Type-check du plugin : une fois le plugin chargé par Claude Code, les types sont posés dans `plugin/agent-room/.claude-plugin/types/` (ignoré par git) et `npx tsc -p plugin/agent-room` fonctionne
 
 ## Tester le plugin en vrai, sur ce Mac
@@ -27,16 +27,18 @@ Visualiseur pixel art d'un agent Claude orchestrateur et de ses sous-agents. Deu
 
 ## Problèmes connus à vérifier et corriger (ordre de priorité)
 
-1. **Taille de la chambre dans le panneau de l'app** : en 0.1.0, elle apparaissait petite avec des bandes noires sur les côtés. En 0.2.0, `width` et `height` sont passés à `Svg`, calculés depuis `bodyColumns × 6,5` px : c'est une estimation à vérifier. Si l'image déborde ou reste petite, ajuster le calcul.
+1. ✅ *Corrigé en 0.3.0 (image sans taille imposée, pleine largeur).* **Taille de la chambre dans le panneau de l'app** : en 0.1.0, elle apparaissait petite avec des bandes noires sur les côtés. En 0.2.0, `width` et `height` sont passés à `Svg`, calculés depuis `bodyColumns × 6,5` px : c'est une estimation à vérifier. Si l'image déborde ou reste petite, ajuster le calcul.
 2. **Claude qui se déplace quand il travaille seul** (0.2.0, non vérifié en vrai) : il doit aller au poste de l'outil (Read → bibliothèque, Edit/Write → bureau de code, Bash → banc de test) puis revenir à son bureau après 6 s d'inactivité.
 3. **Sous-agents en parallèle** : vérifier que chaque appel d'outil est attribué au bon personnage (via `e.agentId` et l'`agentId` renvoyé par `agent.spawn`), et que la retraite à la pompe s'enchaîne bien pour chacun.
-4. **Liste des fichiers** : vérifier les comptes +/− et le diff pour Write (nouveau fichier et réécriture), Edit et MultiEdit ; le diff est replié à 10 lignes avec un bouton « Voir tout le diff ».
-5. **Textes longs** : bulles et noms de fichiers ne doivent jamais déborder du panneau.
-6. **Taille du SVG** : il doit rester sous 131 072 caractères même avec beaucoup d'agents (voir `MAX_LOUNGE`).
+4. ✅ *Corrigé en 0.3.0 (Write sur fichier existant, MultiEdit, replace_all).* **Liste des fichiers** : vérifier les comptes +/− et le diff pour Write (nouveau fichier et réécriture), Edit et MultiEdit ; le diff est replié à 10 lignes avec un bouton « Voir tout le diff ».
+5. ✅ *Corrigé en 0.3.0 (noms coupés au milieu).* **Textes longs** : bulles et noms de fichiers ne doivent jamais déborder du panneau.
+6. ✅ *Corrigé en 0.3.0 (`fitScene` retire bulles puis agents anciens).* **Taille du SVG** : il doit rester sous 131 072 caractères même avec beaucoup d'agents (voir `MAX_LOUNGE`).
 
 ## Règles
 
 - Après chaque correction : `claude plugin test plugin/agent-room` et `claude plugin validate .` doivent passer ; ajoute un test pour chaque bug corrigé.
 - Monte `version` dans `plugin/agent-room/.claude-plugin/plugin.json` à chaque changement publié, pour que `claude plugin update` le voie.
-- Textes de l'interface en français.
+- Version web, terminal et CLI en **français et en anglais** : aucun texte en dur. Page web et mode terminal → `public/i18n.js` ; CLI, setup, hooks, conseiller, logs du serveur → `bin/i18n.js` ; messages créés par le serveur → une clé `msg` dans `server/normalize.js`. Ajoute chaque nouvelle clé dans les deux langues (un test vérifie que les clés et les `{variables}` sont identiques). Le plugin reste en français pour l'instant.
+- Les tests qui lisent la sortie de la CLI fixent la langue (`AGENT_ROOM_LANG`), sinon ils dépendent de la langue de la machine de CI.
+- Une version = `package.json` (puis `npm install --package-lock-only`), une section en haut du `CHANGELOG.md`, et un tag `vX.Y.Z` poussé : la release GitHub se crée toute seule.
 - Ne jamais committer de secret ; `node_modules/` et `.claude-plugin/types/` restent hors de git.

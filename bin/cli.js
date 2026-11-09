@@ -3,19 +3,23 @@
  * claude-agent-room — point d'entrée unique.
  *
  *   claude-agent-room [start] [--port 3030] [--host 127.0.0.1] [--open]
+ *   claude-agent-room setup [--no-open] [--yes]
  *   claude-agent-room hooks install|remove|status [--project] [--dry-run]
  *   claude-agent-room demo [--speed 2]
  *   claude-agent-room watch [fichier.jsonl|dossier]
  *   claude-agent-room tui [--256]
+ *   claude-agent-room advisor [list|show|check|apply|on|off|reset]
  *   claude-agent-room doctor
+ * Partout : --lang fr|en (ou AGENT_ROOM_LANG) pour la langue des messages.
  */
 const fs = require('fs');
 const path = require('path');
 const { version } = require('../package.json');
+const { t } = require('./i18n');
 
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter(a => a.startsWith('-')));
-const positional = argv.filter((a, i) => !a.startsWith('-') && !(i > 0 && /^--(port|host|speed)$/.test(argv[i - 1])));
+const positional = argv.filter((a, i) => !a.startsWith('-') && !(i > 0 && /^--(port|host|speed|lang)$/.test(argv[i - 1])));
 const option = name => {
   const i = argv.indexOf(`--${name}`);
   if (i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('-')) return argv[i + 1];
@@ -24,32 +28,6 @@ const option = name => {
 };
 const port = Number(option('port') || process.env.PORT || process.env.AGENT_ROOM_PORT || 3030);
 const base = `http://127.0.0.1:${port}`;
-
-const HELP = `
-  🛋️  claude-agent-room v${version}
-  Visualiseur temps réel de Claude et de ses sous-agents, en pixel art.
-
-  Utilisation :
-    claude-agent-room setup               tout installer en une fois (assistant guidé)
-    claude-agent-room                     démarre la chambre (http://localhost:3030)
-    claude-agent-room --open              … et l'ouvre dans le navigateur
-    claude-agent-room hooks install       branche Claude Code (~/.claude/settings.json)
-    claude-agent-room hooks install --project   … pour le projet courant seulement
-    claude-agent-room hooks remove        débranche Claude Code
-    claude-agent-room hooks status        indique si les hooks sont installés
-    claude-agent-room demo                lance la démo dans la chambre ouverte
-    claude-agent-room watch [chemin]      suit un transcript au lieu des hooks
-    claude-agent-room tui                 la chambre dans le terminal (démarre le serveur si besoin)
-    claude-agent-room advisor             outils vérifiés pour économiser des tokens
-    claude-agent-room advisor apply essentiel   … les installer (avec vérification des dépôts)
-    claude-agent-room doctor              vérifie l'installation de A à Z
-
-  Options :
-    --port <n>      port du serveur (défaut 3030, ou PORT / AGENT_ROOM_PORT)
-    --host <ip>     interface d'écoute (défaut 127.0.0.1 ; 0.0.0.0 = réseau local, jeton exigé)
-    --open          ouvre le navigateur au démarrage
-    -v, --version   affiche la version
-`;
 
 function headers() {
   const h = { 'content-type': 'application/json' };
@@ -60,7 +38,7 @@ function headers() {
 async function api(route, opts = {}) {
   const r = await fetch(base + route, { headers: headers(), signal: AbortSignal.timeout(2000), ...opts });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(data.error || `HTTP ${r.status}`), { status: r.status });
   return data;
 }
 
@@ -79,7 +57,7 @@ function cmdHooks(action = 'install') {
   if (action === 'install') return run(extra);
   if (action === 'remove' || action === 'uninstall') return run(['--remove', ...extra]);
   if (action === 'status') return run(['--status', ...extra]);
-  console.error(`✖ Action inconnue : hooks ${action} (install, remove ou status)`);
+  console.error(t('cli.unknownHooks', { action }));
   process.exitCode = 1;
 }
 
@@ -87,9 +65,9 @@ async function cmdDemo() {
   const speed = option('speed') || 1;
   try {
     const r = await api(`/api/demo?speed=${encodeURIComponent(speed)}`, { method: 'POST' });
-    console.log(`🎬 Démo lancée : ${r.steps} étapes, ~${Math.round(r.durationMs / 1000)} s. Regarde la chambre !`);
+    console.log(t('cli.demoStarted', { steps: r.steps, seconds: Math.round(r.durationMs / 1000) }));
   } catch (e) {
-    console.error(`✖ Impossible de joindre la chambre sur ${base} (${e.message}). Lance d'abord : npx github:MehenniIslam/claude-agent-room`);
+    console.error(t('cli.demoUnreachable', { base, why: e.message }));
     process.exitCode = 1;
   }
 }
@@ -97,34 +75,71 @@ async function cmdDemo() {
 function askYesNo(question, def = true) {
   if (!process.stdin.isTTY || flags.has('--yes')) return Promise.resolve(def);
   const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(res => rl.question(`  ${question} ${def ? '[O/n]' : '[o/N]'} `, a => {
+  return new Promise(res => rl.question(`  ${question} ${def ? t('yesNo.yes') : t('yesNo.no')} `, a => {
     rl.close();
     const v = a.trim().toLowerCase();
     res(v ? /^(o|oui|y|yes)$/.test(v) : def);
   }));
 }
 
-// Assistant : hooks, conseiller tokens, ambiance, puis la chambre s'ouvre. Chaque étape est réversible.
+const MARKETPLACE = process.env.AGENT_ROOM_MARKETPLACE || 'MehenniIslam/claude-agent-room';
+
+// Installe le plugin Agent Room dans Claude Code (panneau à côté de la conversation), s'il n'y est pas déjà.
+function installPlugin() {
+  const { spawnSync } = require('child_process');
+  const shell = process.platform === 'win32';
+  const later = `claude plugin install agent-room --marketplace ${MARKETPLACE}`;
+  const list = spawnSync('claude', ['plugin', 'list'], { encoding: 'utf8', shell });
+  if (list.error || list.status !== 0) {
+    console.log(`  ○ ${t('plugin.noClaude', { cmd: later })}`);
+    return false;
+  }
+  if (/agent-room@/.test(list.stdout)) {
+    console.log(`  ✅ ${t('plugin.already')}`);
+    return true;
+  }
+  const r = spawnSync('claude', ['plugin', 'install', 'agent-room', '--marketplace', MARKETPLACE], { stdio: 'inherit', shell });
+  if (r.status === 0) return true;
+  console.log(`  ✖ ${t('plugin.failed', { cmd: later })}`);
+  return false;
+}
+
+// Une commande, aucune question : Claude branché au site, plugin dans Claude, site ouvert.
 async function cmdSetup() {
+  if (flags.has('--guide')) return cmdSetupGuide();
+  console.log(`\n  🛋️  ${t('setup.quickTitle', { version })}\n`);
+  console.log(`  ${t('setup.step1')}`);
+  require('../bridge/setup-hooks.js').run(['--quiet']);
+  console.log(`\n  ${t('setup.step2')}`);
+  installPlugin();
+  console.log(`\n  ${t('setup.step3')}`);
+  console.log(`  ${t('setup.reload')}`);
+  console.log(`  ${t('setup.keepOpen')}\n`);
+  return cmdStart(!flags.has('--no-open'));
+}
+
+// Assistant : hooks, plugin, conseiller tokens, ambiance, puis la chambre s'ouvre. Chaque étape est réversible.
+async function cmdSetupGuide() {
   const os = require('os');
   const { saveConfig, loadConfig } = require('../server/config.js');
-  console.log(`\n  🛋️  claude-agent-room v${version} — installation guidée\n`);
-  if (await askYesNo('Brancher Claude Code à la chambre ? (hooks dans ~/.claude/settings.json, sauvegarde faite avant)')) {
+  console.log(`\n  🛋️  ${t('setup.title', { version })}\n`);
+  if (await askYesNo(t('setup.hooks'))) {
     cmdHooks('install');
   } else {
-    console.log('  → Plus tard : claude-agent-room hooks install');
+    console.log(`  ${t('setup.hooksLater')}`);
   }
+  if (await askYesNo(t('setup.askPlugin'))) installPlugin();
   const advisor = require('../advisor/index.js');
-  const tokens = await askYesNo('Au début de chaque nouveau projet, Claude te propose des outils vérifiés qui économisent des tokens ?');
+  const tokens = await askYesNo(t('setup.advisor'));
   await advisor.run([tokens ? 'on' : 'off']);
   const cwd = process.cwd();
-  if (cwd !== os.homedir() && await askYesNo(`Ajouter tout de suite les règles d'économie au CLAUDE.md de ${cwd} ?`, false)) {
-    console.log(`  ✅ Règles ajoutées à ${advisor.applyRules(cwd)}`);
+  if (cwd !== os.homedir() && await askYesNo(t('setup.rules', { dir: cwd }), false)) {
+    console.log(`  ${t('setup.rulesAdded', { file: advisor.applyRules(cwd) })}`);
   }
-  const pro = await askYesNo('Ambiance « pro » (sobre, pas de fusil à pompe) ? Non = ambiance fun', loadConfig().mode === 'pro');
+  const pro = await askYesNo(t('setup.pro'), loadConfig().mode === 'pro');
   saveConfig({ mode: pro ? 'pro' : 'fun' });
-  console.log(`  ✅ Ambiance ${pro ? 'pro' : 'fun'} enregistrée (changeable dans la page).\n`);
-  console.log('  Tout est prêt. Relance Claude Code pour charger les hooks.\n');
+  console.log(`  ${t('setup.moodSaved', { mood: pro ? 'pro' : 'fun' })}\n`);
+  console.log(`  ${t('setup.ready')}\n`);
   return cmdStart(!flags.has('--no-open'));
 }
 
@@ -138,7 +153,11 @@ async function cmdTui() {
 
 function cmdWatch(target) {
   const args = [path.resolve(__dirname, '../bridge/claude-hook.js'), '--jsonl', ...(target ? [target] : [])];
-  require('child_process').spawn(process.execPath, args, { stdio: 'inherit' }).on('exit', c => process.exit(c || 0));
+  const child = require('child_process').spawn(process.execPath, args, { stdio: 'inherit' });
+  child.on('exit', c => process.exit(c || 0));
+  // Sans ça, arrêter « watch » laissait le lecteur de transcript tourner seul et envoyer des événements en double.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { child.kill(sig); setTimeout(() => process.exit(0), 1000).unref(); });
+  process.on('exit', () => { try { child.kill('SIGTERM'); } catch { /* déjà arrêté */ } });
 }
 
 async function cmdDoctor() {
@@ -149,66 +168,68 @@ async function cmdDoctor() {
   const warn = msg => console.log(`  ⚠️  ${msg}`);
   const bad = (msg, fix) => { problems++; console.log(`  ❌ ${msg}${fix ? `\n     → ${fix}` : ''}`); };
 
-  console.log(`\n  🩺 Diagnostic claude-agent-room v${version}\n`);
+  console.log(`\n  🩺 ${t('doctor.title', { version })}\n`);
 
   const major = Number(process.versions.node.split('.')[0]);
   if (major >= 18) ok(`Node.js ${process.versions.node}`);
-  else bad(`Node.js ${process.versions.node} est trop ancien`, 'Installe Node 18 ou plus récent : https://nodejs.org');
+  else bad(t('doctor.nodeOld', { version: process.versions.node }), t('doctor.nodeFix'));
 
   for (const dep of ['express', 'ws']) {
-    try { require.resolve(dep); ok(`Dépendance ${dep} présente`); }
-    catch { bad(`Dépendance ${dep} manquante`, 'Lance npm install dans le dossier du projet'); }
+    try { require.resolve(dep); ok(t('doctor.depOk', { dep })); }
+    catch { bad(t('doctor.depMissing', { dep }), t('doctor.depFix')); }
   }
 
   let serverUp = false;
   try {
     const h = await api('/api/health');
-    if (h.name === 'claude-agent-room') { serverUp = true; ok(`Serveur joignable sur ${base} (v${h.version}${h.auth ? ', jeton exigé' : ''})`); }
-    else bad(`Un autre programme répond sur le port ${port}`, 'Choisis un autre port avec --port et AGENT_ROOM_PORT');
+    if (h.name === 'claude-agent-room') { serverUp = true; ok(t('doctor.serverOk', { base, version: h.version, auth: h.auth ? t('doctor.tokenRequired') : '' })); }
+    else bad(t('doctor.otherProgram', { port }), t('doctor.otherProgramFix'));
   } catch {
-    bad(`Serveur injoignable sur ${base}`, 'Lance la chambre dans un autre terminal : npx github:MehenniIslam/claude-agent-room');
+    bad(t('doctor.serverDown', { base }), t('doctor.serverDownFix'));
   }
 
-  const scopes = [['global', path.join(os.homedir(), '.claude', 'settings.json')], ['projet', path.join(process.cwd(), '.claude', 'settings.json')]];
+  const scopes = [['global', path.join(os.homedir(), '.claude', 'settings.json')], ['project', path.join(process.cwd(), '.claude', 'settings.json')]];
   let hooked = false;
-  for (const [label, file] of scopes) {
+  for (const [scope, file] of scopes) {
     if (!fs.existsSync(file)) continue;
+    const label = t(`doctor.scope.${scope}`);
     try {
       const settings = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '') || '{}');
       const found = setup.isInstalled(settings);
-      if (found.length) { hooked = true; ok(`Hooks ${label} installés (${found.length}/${setup.ALL_EVENTS.length}) dans ${file}`); }
+      if (found.length) { hooked = true; ok(t('doctor.hooksOk', { scope: label, found: found.length, total: setup.ALL_EVENTS.length, file })); }
       const cmds = JSON.stringify(settings.hooks || {});
       const legacy = /claude-hook\.js/.test(cmds) && !cmds.includes('.claude/agent-room/claude-hook.js');
-      if (legacy) warn(`Les hooks ${label} pointent vers une ancienne copie du script → relance : npx github:MehenniIslam/claude-agent-room hooks install${label === 'projet' ? ' --project' : ''}`);
+      if (legacy) warn(t('doctor.hooksLegacy', { scope: label, flag: scope === 'project' ? ' --project' : '' }));
     } catch (e) {
-      bad(`${file} n'est pas un JSON valide (${e.message})`, 'Corrige ce fichier : Claude Code ne pourra pas le lire non plus');
+      bad(t('doctor.badJson', { file, why: e.message }), t('doctor.badJsonFix'));
     }
   }
-  if (!hooked) warn('Aucun hook installé : la chambre ne recevra que la démo. → npx github:MehenniIslam/claude-agent-room hooks install');
+  if (!hooked) warn(t('doctor.noHooks'));
 
   if (fs.existsSync(setup.INSTALLED_HOOK)) {
     const same = fs.readFileSync(setup.INSTALLED_HOOK, 'utf8') === fs.readFileSync(path.resolve(__dirname, '../bridge/claude-hook.js'), 'utf8');
-    if (same) ok(`Script du hook à jour (${setup.INSTALLED_HOOK})`);
-    else warn('Script du hook installé obsolète → relance : npx github:MehenniIslam/claude-agent-room hooks install');
+    if (same) ok(t('doctor.scriptOk', { file: setup.INSTALLED_HOOK }));
+    else warn(t('doctor.scriptOld'));
   } else if (hooked) {
-    bad('Hooks déclarés mais script introuvable', 'Relance : npx github:MehenniIslam/claude-agent-room hooks install');
+    bad(t('doctor.scriptMissing'), t('doctor.scriptMissingFix'));
   }
 
   if (serverUp) {
     try {
-      await api('/api/event', { method: 'POST', body: JSON.stringify({ type: 'AGENT_MESSAGE', agentId: 'claude-main', message: '🩺 Diagnostic : le pont fonctionne !', source: 'doctor' }) });
-      ok('Événement de test envoyé : une bulle doit apparaître au-dessus de Claude');
+      await api('/api/event', { method: 'POST', body: JSON.stringify({ type: 'AGENT_MESSAGE', agentId: 'claude-main', message: t('doctor.pingMessage'), source: 'doctor' }) });
+      ok(t('doctor.pingOk'));
     } catch (e) {
-      bad(`Envoi d'un événement refusé (${e.message})`, e.message.includes('Jeton') ? 'Exporte AGENT_ROOM_TOKEN avec le jeton affiché par le serveur' : undefined);
+      bad(t('doctor.pingFail', { why: e.message }), e.status === 401 ? t('doctor.pingTokenFix') : undefined);
     }
   }
 
-  console.log(problems ? `\n  ${problems} problème(s) à corriger.\n` : '\n  Tout est prêt. Donne à Claude une tâche avec des sous-agents !\n');
+  console.log(`\n  ${problems ? t('doctor.problems', { n: problems }) : t('doctor.allGood')}\n`);
   process.exitCode = problems ? 1 : 0;
 }
 
 async function main() {
-  if (flags.has('-h') || flags.has('--help') || positional[0] === 'help') return console.log(HELP);
+  const help = () => console.log(t('help', { version }));
+  if (flags.has('-h') || flags.has('--help') || positional[0] === 'help') return help();
   if (flags.has('-v') || flags.has('--version')) return console.log(version);
   const [cmd, sub] = positional;
   switch (cmd) {
@@ -222,8 +243,8 @@ async function main() {
     case 'advisor': return require('../advisor/index.js').run(argv.slice(argv.indexOf('advisor') + 1));
     case 'doctor': return cmdDoctor();
     default:
-      console.error(`✖ Commande inconnue : ${cmd}`);
-      console.log(HELP);
+      console.error(t('cli.unknownCommand', { cmd }));
+      help();
       process.exitCode = 1;
   }
 }

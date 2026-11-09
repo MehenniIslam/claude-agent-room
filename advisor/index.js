@@ -20,6 +20,7 @@ const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const { advisorState, saveAdvisorState } = require('../bridge/claude-hook.js');
+const { t: tr, field, lang } = require('../bin/i18n');
 
 const CATALOG = require('./catalog.json');
 const RULES_FILE = path.join(__dirname, 'rules', 'token-efficient.md');
@@ -33,7 +34,7 @@ function resolveIds(args) {
   for (const a of args) {
     if (a === 'essentiel' || a === 'gros-projets') ids.push(...CATALOG.tools.filter(t => t.pack === a).map(t => t.id));
     else if (byId(a)) ids.push(a);
-    else throw new Error(`Outil inconnu : "${a}". Seuls les outils du catalogue vérifié sont acceptés (claude-agent-room advisor).`);
+    else throw new Error(tr('adv.unknown', { id: a }));
   }
   return [...new Set(ids)];
 }
@@ -41,7 +42,7 @@ function resolveIds(args) {
 function ask(question) {
   if (!process.stdin.isTTY) return Promise.resolve(false);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(res => rl.question(`${question} [o/N] `, a => { rl.close(); res(/^(o|oui|y|yes)$/i.test(a.trim())); }));
+  return new Promise(res => rl.question(`${question} ${tr('adv.yesNo')} `, a => { rl.close(); res(/^(o|oui|y|yes)$/i.test(a.trim())); }));
 }
 
 /** État d'un dépôt sur GitHub comparé à la version relue. */
@@ -55,41 +56,43 @@ async function repoStatus(tool) {
     head,
     changed: head && !head.startsWith(tool.reviewedSha),
     archived: Boolean(repo.archived),
-    license: (repo.license && repo.license.spdx_id) || 'inconnue',
+    license: (repo.license && repo.license.spdx_id) || '?',
     stars: repo.stargazers_count,
     compare: `https://github.com/${tool.repo}/compare/${tool.reviewedSha}...${head}`
   };
 }
 
 function printList() {
-  console.log(`\n  💡 Conseiller tokens — catalogue vérifié le ${CATALOG.reviewedAt}`);
-  console.log(`     ${CATALOG.policy}\n`);
+  console.log(`\n  ${tr('adv.title', { date: CATALOG.reviewedAt })}`);
+  console.log(`     ${lang === 'fr' ? CATALOG.policy : CATALOG.policy_en || CATALOG.policy}\n`);
   for (const pack of ['essentiel', 'gros-projets']) {
-    console.log(pack === 'essentiel' ? '  Pack essentiel (site, petite app) :' : '\n  Pour un gros dépôt :');
+    console.log(pack === 'essentiel' ? `  ${tr('adv.packEssential')}` : `\n  ${tr('adv.packBig')}`);
     for (const t of CATALOG.tools.filter(x => x.pack === pack)) {
-      console.log(`   • ${t.id.padEnd(13)} ${t.name} — ${t.savings}`);
-      console.log(`     ${''.padEnd(13)} ${t.what}`);
-      console.log(`     ${''.padEnd(13)} ⚠ ${t.risks[0]}`);
+      console.log(`   • ${t.id.padEnd(13)} ${field(t, 'name')} — ${field(t, 'savings')}`);
+      console.log(`     ${''.padEnd(13)} ${field(t, 'what')}`);
+      console.log(`     ${''.padEnd(13)} ⚠ ${field(t, 'risks')[0]}`);
     }
   }
-  console.log('\n  Écartés après vérification :');
-  for (const n of CATALOG.notRecommended) console.log(`   ✗ ${n.name} — ${n.why}`);
+  console.log(`\n  ${tr('adv.rejected')}`);
+  for (const n of CATALOG.notRecommended) console.log(`   ✗ ${n.name} — ${lang === 'fr' ? n.why : n.why_en || n.why}`);
   const s = advisorState();
-  console.log(`\n  Proposition automatique au début d'un projet : ${s.enabled ? 'activée' : 'coupée'} (${Object.keys(s.asked).length} projet(s) déjà vus)`);
-  console.log('  Installer : claude-agent-room advisor apply essentiel   ·   Vérifier les dépôts : claude-agent-room advisor check\n');
+  console.log(`\n  ${tr('adv.auto', { state: s.enabled ? tr('adv.on') : tr('adv.off'), n: Object.keys(s.asked).length })}`);
+  console.log(`  ${tr('adv.hint')}\n`);
 }
 
 function show(id) {
   const t = byId(id);
-  if (!t) throw new Error(`Outil inconnu : "${id}"`);
-  console.log(`\n  ${t.name}  (https://github.com/${t.repo}, licence ${t.license}, ★ ${t.stars})`);
-  console.log(`  ${t.what}\n  Idéal pour : ${t.bestFor}\n  Gain : ${t.savings}`);
-  console.log(`  Exécute du code : ${t.runsCode ? 'oui' : 'non'} · Réseau : ${t.network ? 'oui' : 'non'} · Commit relu : ${t.reviewedSha}`);
-  for (const r of t.risks) console.log(`  ⚠ ${r}`);
-  console.log('\n  Installation :');
-  if (t.install.type === 'plugin') console.log(`    Dans Claude Code : /plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}\n    Depuis un shell  : claude plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}`);
-  else if (t.install.type === 'rules') console.log('    claude-agent-room advisor apply rules   (dans le dossier du projet)');
-  else for (const s of t.install.steps) console.log(`    ${s}`);
+  if (!t) throw new Error(tr('adv.unknown', { id }));
+  console.log(`\n  ${tr('adv.show.head', { name: field(t, 'name'), repo: t.repo, license: t.license, stars: t.stars })}`);
+  console.log(`  ${field(t, 'what')}\n  ${tr('adv.show.best', { text: field(t, 'bestFor') })}\n  ${tr('adv.show.gain', { text: field(t, 'savings') })}`);
+  console.log(`  ${tr('adv.show.facts', { code: t.runsCode ? tr('adv.yes') : tr('adv.no'), net: t.network ? tr('adv.yes') : tr('adv.no'), sha: t.reviewedSha })}`);
+  for (const r of field(t, 'risks')) console.log(`  ⚠ ${r}`);
+  console.log(`\n  ${tr('adv.show.install')}`);
+  if (t.install.type === 'plugin') {
+    console.log(`    ${tr('adv.show.inClaude', { cmd: `/plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}` })}`);
+    console.log(`    ${tr('adv.show.inShell', { cmd: `claude plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}` })}`);
+  } else if (t.install.type === 'rules') console.log(`    ${tr('adv.show.rules')}`);
+  else for (const step of t.install.steps) console.log(`    ${step}`);
   console.log('');
 }
 
@@ -118,53 +121,56 @@ async function apply(args, { yes = false } = {}) {
   const ids = resolveIds(args.length ? args : ['essentiel']);
   for (const id of ids) {
     const t = byId(id);
-    console.log(`\n  → ${t.name}`);
+    console.log(`\n  → ${field(t, 'name')}`);
     if (t.install.type === 'rules') {
-      console.log(`  ✅ Règles ajoutées à ${applyRules()}`);
+      console.log(`  ${tr('adv.rulesAdded', { file: applyRules() })}`);
       continue;
     }
     if (t.install.type === 'manual') { show(id); continue; }
     // plugin : vérification du dépôt avant toute installation
     let status = null;
-    try { status = await repoStatus(t); } catch (e) { console.log(`  ⚠ Vérification impossible (${e.message}).`); }
-    if (status && status.archived) { console.log('  ✖ Dépôt archivé : installation refusée.'); continue; }
+    try { status = await repoStatus(t); } catch (e) { console.log(`  ${tr('adv.checkFailed', { why: e.message })}`); }
+    if (status && status.archived) { console.log(`  ${tr('adv.archived')}`); continue; }
     if (!status || status.changed) {
-      if (status) console.log(`  ⚠ Le dépôt a changé depuis la vérification (${t.reviewedSha} → ${status.head}). Relis les changements : ${status.compare}`);
-      if (!yes && !(await ask('  Installer quand même ?'))) { console.log('  Ignoré.'); continue; }
+      if (status) console.log(`  ${tr('adv.changed', { from: t.reviewedSha, to: status.head, url: status.compare })}`);
+      if (!yes && !(await ask(`  ${tr('adv.installAnyway')}`))) { console.log(`  ${tr('adv.skipped')}`); continue; }
     } else {
-      console.log(`  ✔ Dépôt identique à la version relue (${status.head}), licence ${status.license}.`);
+      console.log(`  ${tr('adv.same', { sha: status.head, license: status.license })}`);
     }
+    const cmd = `/plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}`;
     if (hasClaudeCli()) {
       const r = spawnSync('claude', ['plugin', 'install', t.install.plugin, '--marketplace', t.install.marketplace], { stdio: 'inherit', shell: process.platform === 'win32' });
-      console.log(r.status === 0 ? '  ✅ Installé. Il sera actif au prochain démarrage de Claude Code.' : '  ✖ L\'installation a échoué (voir ci-dessus).');
+      console.log(`  ${r.status === 0 ? tr('adv.installed') : tr('adv.installFailed')}`);
     } else {
-      console.log(`  Tape dans Claude Code : /plugin install ${t.install.plugin} --marketplace ${t.install.marketplace}`);
+      console.log(`  ${tr('adv.typeInClaude', { cmd })}`);
     }
   }
   console.log('');
 }
 
 async function check() {
-  console.log(`\n  🔎 Vérification des dépôts (version relue le ${CATALOG.reviewedAt})\n`);
+  console.log(`\n  ${tr('adv.checkTitle', { date: CATALOG.reviewedAt })}\n`);
   let warnings = 0;
   for (const t of CATALOG.tools) {
     try {
       const s = await repoStatus(t);
       const flags = [];
-      if (s.archived) flags.push('ARCHIVÉ');
-      if (s.license !== t.license && !(t.license === 'Elastic-2.0' && s.license === 'NOASSERTION')) flags.push(`licence ${t.license} → ${s.license}`);
-      if (s.changed) flags.push(`modifié depuis ${t.reviewedSha} (${s.compare})`);
+      if (s.archived) flags.push(tr('adv.checkArchived'));
+      if (s.license !== t.license && !(t.license === 'Elastic-2.0' && s.license === 'NOASSERTION')) flags.push(tr('adv.checkLicense', { from: t.license, to: s.license }));
+      if (s.changed) flags.push(tr('adv.checkChanged', { sha: t.reviewedSha, url: s.compare }));
       warnings += flags.length ? 1 : 0;
-      console.log(`  ${flags.length ? '⚠' : '✔'} ${t.id.padEnd(13)} ★ ${s.stars}  ${flags.length ? flags.join(' · ') : 'identique à la version relue'}`);
+      console.log(`  ${flags.length ? '⚠' : '✔'} ${t.id.padEnd(13)} ★ ${s.stars}  ${flags.length ? flags.join(' · ') : tr('adv.checkSame')}`);
     } catch (e) {
-      console.log(`  ? ${t.id.padEnd(13)} vérification impossible (${e.message})`);
+      console.log(`  ? ${t.id.padEnd(13)} ${tr('adv.checkError', { why: e.message })}`);
     }
   }
-  console.log(warnings ? '\n  Un dépôt modifié n\'est pas forcément dangereux : relis le lien de comparaison avant d\'installer.\n' : '\n  Tout est conforme.\n');
+  console.log(`\n  ${warnings ? tr('adv.checkWarn') : tr('adv.checkOk')}\n`);
 }
 
 async function run(argv) {
-  const [sub, ...rest] = argv;
+  // --lang et sa valeur sont pour bin/i18n.js, pas des noms d'outils
+  const cleaned = argv.filter((a, i) => a !== '--lang' && argv[i - 1] !== '--lang' && !a.startsWith('--lang='));
+  const [sub, ...rest] = cleaned;
   const yes = rest.includes('--yes');
   const args = rest.filter(a => !a.startsWith('-'));
   switch (sub) {
@@ -174,13 +180,13 @@ async function run(argv) {
     case 'apply': return apply(args, { yes });
     case 'on': case 'off': {
       const s = advisorState(); s.enabled = sub === 'on'; saveAdvisorState(s);
-      return console.log(sub === 'on' ? '✅ Claude proposera les outils au début de chaque nouveau projet.' : '🔕 Claude ne proposera plus les outils d\'économie de tokens.');
+      return console.log(sub === 'on' ? tr('adv.enabled') : tr('adv.disabled'));
     }
     case 'reset': {
       const s = advisorState(); s.asked = {}; saveAdvisorState(s);
-      return console.log('↺ Claude reposera la question au prochain démarrage dans chaque projet.');
+      return console.log(tr('adv.reset'));
     }
-    default: throw new Error(`Action inconnue : advisor ${sub} (list, show, check, apply, on, off, reset)`);
+    default: throw new Error(tr('adv.unknownAction', { action: sub }));
   }
 }
 

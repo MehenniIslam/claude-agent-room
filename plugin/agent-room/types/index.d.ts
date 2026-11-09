@@ -71,6 +71,7 @@ export type RoomPrefs = {
   ending: string
   file: string
   full?: boolean
+  big?: boolean
 }
 
 declare module 'claude-code' {

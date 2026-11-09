@@ -42,23 +42,30 @@ function prettyName(input) {
   return short(name, 18);
 }
 
+// `message` reste en français (compatibilité de l'API) ; `msg` = clé de traduction + valeurs,
+// pour que chaque écran affiche le texte dans sa langue (voir public/i18n.js, clés « msg.* »).
 function describeTool(tool, input = {}) {
   const file = input.file_path || input.notebook_path || input.path || '';
   switch (tool) {
-    case 'Read': return { file, message: `Je lis ${file || 'un fichier'}` };
-    case 'Write': return { file, message: `J'écris ${file || 'un fichier'}` };
+    case 'Read': return { file, message: `Je lis ${file || 'un fichier'}`, msg: { k: 'read', a: { file } } };
+    case 'Write': return { file, message: `J'écris ${file || 'un fichier'}`, msg: { k: 'write', a: { file } } };
     case 'Edit':
     case 'MultiEdit':
-    case 'NotebookEdit': return { file, message: `Je modifie ${file || 'un fichier'}` };
-    case 'Grep': return { file, message: `grep "${short(input.pattern, 40)}"${input.path ? ' dans ' + input.path : ''}` };
-    case 'Glob': return { file, message: `Je cherche ${short(input.pattern, 50)}` };
+    case 'NotebookEdit': return { file, message: `Je modifie ${file || 'un fichier'}`, msg: { k: 'edit', a: { file } } };
+    case 'Grep': {
+      const pattern = short(input.pattern, 40);
+      return input.path
+        ? { file, message: `grep "${pattern}" dans ${input.path}`, msg: { k: 'grepIn', a: { pattern, path: input.path } } }
+        : { file, message: `grep "${pattern}"`, msg: { k: 'grep', a: { pattern } } };
+    }
+    case 'Glob': return { file, message: `Je cherche ${short(input.pattern, 50)}`, msg: { k: 'glob', a: { pattern: short(input.pattern, 50) } } };
     case 'Bash': return { file: '', message: `$ ${short(input.command, 90)}` };
-    case 'WebSearch': return { file: '', message: `Recherche web : ${short(input.query, 70)}` };
-    case 'WebFetch': return { file: '', message: `Je consulte ${short(input.url, 70)}` };
+    case 'WebSearch': return { file: '', message: `Recherche web : ${short(input.query, 70)}`, msg: { k: 'webSearch', a: { query: short(input.query, 70) } } };
+    case 'WebFetch': return { file: '', message: `Je consulte ${short(input.url, 70)}`, msg: { k: 'webFetch', a: { url: short(input.url, 70) } } };
     case 'TodoWrite':
     case 'TaskCreate':
-    case 'TaskUpdate': return { file: '', message: 'Je mets à jour la liste de tâches' };
-    default: return { file, message: `Outil ${tool}` };
+    case 'TaskUpdate': return { file: '', message: 'Je mets à jour la liste de tâches', msg: { k: 'todo' } };
+    default: return { file, message: `Outil ${tool}`, msg: { k: 'tool', a: { tool } } };
   }
 }
 
@@ -103,6 +110,20 @@ function extractText(resp) {
   return '';
 }
 
+/**
+ * Réponse de l'outil Agent quand le sous-agent part en arrière-plan : ce n'est pas son rapport.
+ * Renvoie { agentRef } (l'agent_id annoncé, s'il y est) ou null.
+ */
+function asyncLaunch(resp) {
+  if (resp && typeof resp === 'object' && (resp.status === 'async_launched' || resp.isAsync === true)) {
+    return { agentRef: resp.agentId || resp.agent_id || null };
+  }
+  const text = extractText(resp);
+  if (!/async agent launched|agent is working in the background|running in the background/i.test(text)) return null;
+  const m = /agentId:\s*([\w-]+)/.exec(text);
+  return { agentRef: m ? m[1] : null };
+}
+
 function isFailure(resp) {
   if (!resp || typeof resp !== 'object') return false;
   return Boolean(resp.is_error || resp.isError || resp.error || resp.interrupted ||
@@ -121,6 +142,7 @@ class HookNormalizer {
     this.byToolUse = new Map();   // tool_use_id -> sub id
     this.byAgentRef = new Map();  // agent_id Claude Code -> sub id
     this.stack = [];              // sous-agents actifs, ordre de création
+    this.callers = new Map();     // tool_use_id -> qui a commencé l'appel
   }
 
   isRawHook(body) {
@@ -131,7 +153,8 @@ class HookNormalizer {
     if (agentRef && this.byAgentRef.has(agentRef)) return this.byAgentRef.get(agentRef);
     for (let i = this.stack.length - 1; i >= 0; i--) {
       const s = this.subs.get(this.stack[i]);
-      if (s && !s.done) return s.id;
+      // Un sous-agent dont on connaît l'agent_id signe ses appels : un appel sans agent_id n'est pas le sien.
+      if (s && !s.done && !s.agentRef) return s.id;
     }
     return MAIN_ID;
   }
@@ -163,15 +186,15 @@ class HookNormalizer {
     const base = { source: 'claude-code', sessionId: p.session_id };
 
     if (ev === 'UserPromptSubmit') {
-      return [{ ...base, type: 'AGENT_MESSAGE', agentId: MAIN_ID, message: `Nouvelle demande : ${short(p.prompt, 160)}` }];
+      return [{ ...base, type: 'AGENT_MESSAGE', agentId: MAIN_ID, message: `Nouvelle demande : ${short(p.prompt, 160)}`, msg: { k: 'newRequest', a: { text: short(p.prompt, 160) } } }];
     }
 
     // Fin d'un tour, ou Claude bloqué sur une permission / une question : la page prévient (son, notification).
     if (ev === 'Stop') {
-      return [{ ...base, type: 'NOTIFY', kind: 'done', agentId: MAIN_ID, message: "J'ai terminé, à toi de jouer !" }];
+      return [{ ...base, type: 'NOTIFY', kind: 'done', agentId: MAIN_ID, message: "J'ai terminé, à toi de jouer !", msg: { k: 'turnDone' } }];
     }
     if (ev === 'Notification') {
-      return [{ ...base, type: 'NOTIFY', kind: 'waiting', agentId: MAIN_ID, message: short(p.message || "J'attends ta réponse.", 200) }];
+      return [{ ...base, type: 'NOTIFY', kind: 'waiting', agentId: MAIN_ID, message: short(p.message || "J'attends ta réponse.", 200), ...(p.message ? {} : { msg: { k: 'waiting' } }) }];
     }
 
     if (ev === 'PreToolUse' && SPAWN_TOOLS.has(tool)) {
@@ -201,11 +224,21 @@ class HookNormalizer {
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && SPAWN_TOOLS.has(tool)) {
       const id = (p.tool_use_id && this.byToolUse.get(p.tool_use_id)) || this.stack[0];
       if (!id || !this.subs.has(id) || this.subs.get(id).done) return [];
+      const launched = asyncLaunch(p.tool_response);
+      if (launched && ev === 'PostToolUse') {
+        // Sous-agent lancé en arrière-plan : il travaille encore, son rapport viendra avec SubagentStop.
+        const sub = this.subs.get(id);
+        if (launched.agentRef && !sub.agentRef) {
+          sub.agentRef = launched.agentRef;
+          this.byAgentRef.set(launched.agentRef, id);
+        }
+        return [];
+      }
       this.finish(id);
       const failed = ev === 'PostToolUseFailure' || isFailure(p.tool_response);
       const out = [];
-      if (failed) out.push({ ...base, type: 'ERROR', agentId: id, message: short(extractText(p.tool_response) || p.error || 'Échec du sous-agent', 140) });
-      out.push({ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(extractText(p.tool_response) || 'Mission terminée.', 180) });
+      if (failed) { const why = short(extractText(p.tool_response) || p.error, 140); out.push({ ...base, type: 'ERROR', agentId: id, message: why || 'Échec du sous-agent', ...(why ? {} : { msg: { k: 'subagentFailed' } }) }); }
+      { const report = short(extractText(p.tool_response), 180); out.push({ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: report || 'Mission terminée.', ...(report ? {} : { msg: { k: 'missionDone' } }) }); }
       return out;
     }
 
@@ -224,20 +257,38 @@ class HookNormalizer {
       // Sans agent_id fiable, on laisse PostToolUse(Task) clore la mission.
       if (!id || this.subs.get(id).done) return [];
       this.finish(id);
-      return [{ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(p.last_assistant_message || 'Mission terminée.', 180) }];
+      return [{ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(p.last_assistant_message || 'Mission terminée.', 180), ...(p.last_assistant_message ? {} : { msg: { k: 'missionDone' } }) }];
+    }
+
+    if (ev === 'PreToolUse' && tool === 'SubagentHandback') {
+      // Un sous-agent en arrière-plan remet son rapport par cet outil : c'est sa fin de mission.
+      const id = p.agent_id && this.byAgentRef.get(p.agent_id);
+      if (!id || !this.subs.has(id) || this.subs.get(id).done) return [];
+      this.finish(id);
+      return [{ ...base, type: 'SUBAGENT_COMPLETE', agentId: id, targetAgentId: MAIN_ID, message: short(input.message || 'Mission terminée.', 180), ...(input.message ? {} : { msg: { k: 'missionDone' } }) }];
     }
 
     if (ev === 'PreToolUse' && tool) {
-      const agentId = this.activeSub(p.agent_id);
+      const agentId = p.main_loop === true ? MAIN_ID : this.activeSub(p.agent_id);
+      if (p.tool_use_id) {
+        this.callers.set(p.tool_use_id, agentId);
+        if (this.callers.size > 2000) this.callers.delete(this.callers.keys().next().value);
+      }
       const d = describeTool(tool, input);
-      return [{ ...base, type: 'TOOL_START', agentId, tool, file: d.file, message: d.message, ...toolExtras(tool, input) }];
+      return [{ ...base, type: 'TOOL_START', agentId, tool, file: d.file, message: d.message, ...(d.msg ? { msg: d.msg } : {}), ...toolExtras(tool, input) }];
     }
 
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && tool) {
-      const agentId = this.activeSub(p.agent_id);
+      // La fin d'un appel revient à celui qui l'a commencé, même si un sous-agent est né entre-temps.
+      const started = p.tool_use_id && this.callers.get(p.tool_use_id);
+      if (p.tool_use_id) this.callers.delete(p.tool_use_id);
+      const agentId = started && (started === MAIN_ID || this.subs.has(started)) ? started : this.activeSub(p.agent_id);
+      // Un sous-agent qui a déjà remis son rapport (SubagentHandback) ne doit pas « revenir » au travail.
+      if (tool === 'SubagentHandback' || (agentId !== MAIN_ID && this.subs.get(agentId)?.done)) return [];
       const failed = ev === 'PostToolUseFailure' || isFailure(p.tool_response);
-      const out = [{ ...base, type: 'TOOL_END', agentId, tool, success: !failed, message: failed ? short(extractText(p.tool_response) || p.error || 'Échec', 120) : '' }];
-      if (failed) out.push({ ...base, type: 'ERROR', agentId, tool, message: `${tool} a échoué : ${short(extractText(p.tool_response) || p.error, 100)}` });
+      const why = failed ? short(extractText(p.tool_response) || p.error, 120) : '';
+      const out = [{ ...base, type: 'TOOL_END', agentId, tool, success: !failed, message: failed ? why || 'Échec' : '', ...(failed && !why ? { msg: { k: 'failure' } } : {}) }];
+      if (failed) out.push({ ...base, type: 'ERROR', agentId, tool, message: `${tool} a échoué : ${short(why, 100)}`, msg: { k: 'failed', a: { tool, why: short(why, 100) } } });
       return out;
     }
 
@@ -245,4 +296,4 @@ class HookNormalizer {
   }
 }
 
-module.exports = { HookNormalizer, MAIN_ID, inferRole, short, makeDiff, toolExtras };
+module.exports = { HookNormalizer, MAIN_ID, inferRole, short, makeDiff, toolExtras, asyncLaunch };
