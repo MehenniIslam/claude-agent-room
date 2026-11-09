@@ -30,7 +30,8 @@ const HELP = `
   Visualiseur temps réel de Claude et de ses sous-agents, en pixel art.
 
   Utilisation :
-    claude-agent-room setup               tout installer en une fois (assistant guidé)
+    claude-agent-room setup               tout installer d'un coup : site + panneau dans Claude, sans question
+    claude-agent-room setup --guide       … en choisissant chaque étape (tokens, ambiance)
     claude-agent-room                     démarre la chambre (http://localhost:3030)
     claude-agent-room --open              … et l'ouvre dans le navigateur
     claude-agent-room hooks install       branche Claude Code (~/.claude/settings.json)
@@ -104,8 +105,44 @@ function askYesNo(question, def = true) {
   }));
 }
 
-// Assistant : hooks, conseiller tokens, ambiance, puis la chambre s'ouvre. Chaque étape est réversible.
+const MARKETPLACE = process.env.AGENT_ROOM_MARKETPLACE || 'MehenniIslam/claude-agent-room';
+
+// Installe le plugin Agent Room dans Claude Code (panneau à côté de la conversation), s'il n'y est pas déjà.
+function installPlugin() {
+  const { spawnSync } = require('child_process');
+  const shell = process.platform === 'win32';
+  const later = `claude plugin install agent-room --marketplace ${MARKETPLACE}`;
+  const list = spawnSync('claude', ['plugin', 'list'], { encoding: 'utf8', shell });
+  if (list.error || list.status !== 0) {
+    console.log(`  ○ Commande « claude » introuvable : le site marche sans. Pour le panneau dans Claude, plus tard : ${later}`);
+    return false;
+  }
+  if (/agent-room@/.test(list.stdout)) {
+    console.log('  ✅ Plugin Agent Room déjà installé dans Claude');
+    return true;
+  }
+  const r = spawnSync('claude', ['plugin', 'install', 'agent-room', '--marketplace', MARKETPLACE], { stdio: 'inherit', shell });
+  if (r.status === 0) return true;
+  console.log(`  ✖ Le plugin ne s'est pas installé. Réessaie plus tard : ${later}`);
+  return false;
+}
+
+// Une commande, aucune question : Claude branché au site, plugin dans Claude, site ouvert.
 async function cmdSetup() {
+  if (flags.has('--guide')) return cmdSetupGuide();
+  console.log(`\n  🛋️  claude-agent-room v${version} — installation\n`);
+  console.log('  1/3  Brancher Claude Code au site (sauvegarde de settings.json faite avant)');
+  require('../bridge/setup-hooks.js').run(['--quiet']);
+  console.log('\n  2/3  Le panneau Agent Room dans Claude');
+  installPlugin();
+  console.log('\n  3/3  Le site');
+  console.log("  Relance Claude Code (ou tape /reload-plugins) pour qu'il voie les nouveaux réglages.");
+  console.log('  Garde ce terminal ouvert : il fait tourner le site. Pour tout retirer : claude-agent-room hooks remove\n');
+  return cmdStart(!flags.has('--no-open'));
+}
+
+// Assistant : hooks, plugin, conseiller tokens, ambiance, puis la chambre s'ouvre. Chaque étape est réversible.
+async function cmdSetupGuide() {
   const os = require('os');
   const { saveConfig, loadConfig } = require('../server/config.js');
   console.log(`\n  🛋️  claude-agent-room v${version} — installation guidée\n`);
@@ -114,6 +151,7 @@ async function cmdSetup() {
   } else {
     console.log('  → Plus tard : claude-agent-room hooks install');
   }
+  if (await askYesNo('Installer aussi le panneau Agent Room dans Claude ?')) installPlugin();
   const advisor = require('../advisor/index.js');
   const tokens = await askYesNo('Au début de chaque nouveau projet, Claude te propose des outils vérifiés qui économisent des tokens ?');
   await advisor.run([tokens ? 'on' : 'off']);
@@ -138,7 +176,11 @@ async function cmdTui() {
 
 function cmdWatch(target) {
   const args = [path.resolve(__dirname, '../bridge/claude-hook.js'), '--jsonl', ...(target ? [target] : [])];
-  require('child_process').spawn(process.execPath, args, { stdio: 'inherit' }).on('exit', c => process.exit(c || 0));
+  const child = require('child_process').spawn(process.execPath, args, { stdio: 'inherit' });
+  child.on('exit', c => process.exit(c || 0));
+  // Sans ça, arrêter « watch » laissait le lecteur de transcript tourner seul et envoyer des événements en double.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { child.kill(sig); setTimeout(() => process.exit(0), 1000).unref(); });
+  process.on('exit', () => { try { child.kill('SIGTERM'); } catch { /* déjà arrêté */ } });
 }
 
 async function cmdDoctor() {
