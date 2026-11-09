@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.0 — plugin 0.3.0
+
+### Une seule commande
+- `setup` installe tout sans poser de question : hooks (avec sauvegarde de `settings.json`), plugin Agent Room dans Claude (s'il manque), puis le site s'ouvre. L'ancien assistant reste disponible avec `setup --guide`.
+- Sans commande `claude` sur la machine, le site s'installe quand même et `setup` indique la commande à lancer plus tard.
+
+### Plugin (panneau dans Claude)
+- La chambre prend toute la largeur du panneau : elle est dessinée en image, sans taille imposée (avant, le cadre interactif retombait à ~150 px de haut avec des bandes noires).
+- Bouton « ⤢ Chambre seule » (mémorisé) et lien « 🌐 Vue 3D sur le site » (port `AGENT_ROOM_PORT`).
+- Réécrire un fichier existant avec Write compte et montre les lignes retirées ; MultiEdit enchaîne ses modifications ; `replace_all` compte chaque occurrence.
+- Les noms de fichiers longs sont coupés au milieu ; le SVG reste sous 131 072 caractères même avec beaucoup d'agents au travail.
+
+### Site
+- Sous-agents en arrière-plan : la confirmation de lancement n'est plus prise pour leur rapport ; leur vrai rapport (SubagentHandback ou SubagentStop) clôt la mission.
+- La fin d'un appel d'outil revient à celui qui l'a commencé ; en mode `watch`, les appels du transcript principal restent à Claude et un message réécrit n'est plus rejoué.
+- Arrêter `watch` arrête aussi son lecteur de transcript (il restait tourner seul et envoyait des événements en double).
+
+### Qualité
+- 36 tests Node et 12 tests du plugin.
+
 ## 1.3.0
 
 ### Économiser des tokens
